@@ -43,8 +43,6 @@ DLL_REPLACEMENTS = {
     
     # NETAPI32
     7: {'name': 'NETAPI32', 'replacements': {
-        # Оригінал (12 байт): "NETAPI32.DLL"
-        # Заміна  (12 байт): "EXNETAPI.dll"
         b'NETAPI32.DLL': b'EXNETAPI.DLL',
         b'NETAPI32.dll': b'EXNETAPI.dll',
         b'netapi32.dll': b'EXNETAPI.dll',
@@ -54,8 +52,6 @@ DLL_REPLACEMENTS = {
     
     # WSOCK32
     8: {'name': 'WSOCK32', 'replacements': {
-        # Оригінал (10 байт): "WSOCK32.DLL"
-        # Заміна  (10 байт): "EXWS__.DLL" (2 символи padding)
         b'WSOCK32.DLL': b'EXWS.DLL\x00\x00\x00',
         b'WSOCK32.dll': b'EXWS.dll\x00\x00\x00',
         b'wsock32.dll': b'EXWS.DLL\x00\x00\x00',
@@ -72,8 +68,6 @@ DLL_REPLACEMENTS = {
     
     # # DirectX 8
     # 10: {'name': 'D3D8', 'replacements': {
-        # # Оригінал (8 байт): "D3D8.DLL"
-        # # Заміна  (8 байт): "EXD8.DLL"
         # b'D3D8.DLL': b'EXD8.DLL',
         # b'D3D8.dll': b'EXD8.dll',
         # b'd3d8.dll': b'EXD8.dll',
@@ -82,8 +76,6 @@ DLL_REPLACEMENTS = {
     
     # # DirectX 9
     # 11: {'name': 'D3D9', 'replacements': {
-        # # Оригінал (8 байт): "D3D9.DLL"
-        # # Заміна  (8 байт): "EXD9.DLL"
         # b'D3D9.DLL': b'EXD9.DLL',
         # b'D3D9.dll': b'EXD9.dll',
         # b'd3d9.dll': b'EXD9.dll',
@@ -92,8 +84,6 @@ DLL_REPLACEMENTS = {
     
     # # D3D10Core
     # 12: {'name': 'D3D10CORE', 'replacements': {
-        # # Оригінал (13 байт): "D3D10CORE.DLL"
-        # # Заміна  (13 байт): "EXD10CORE.DLL"
         # b'D3D10CORE.DLL': b'EXD10CORE.DLL',
         # b'D3D10CORE.dll': b'EXD10CORE.dll',
         # b'd3d10core.dll': b'EXD10CORE.dll',
@@ -103,8 +93,6 @@ DLL_REPLACEMENTS = {
     
     # # DirectX 11
     # 13: {'name': 'D3D11', 'replacements': {
-        # # Оригінал (9 байт): "D3D11.DLL"
-        # # Заміна  (9 байт): "EXD11.DLL"
         # b'D3D11.DLL': b'EXD11.DLL',
         # b'D3D11.dll': b'EXD11.dll',
         # b'd3d11.dll': b'EXD11.dll',
@@ -113,11 +101,10 @@ DLL_REPLACEMENTS = {
     
     # # DXGI (DirectX Graphics Infrastructure)
     # 14: {'name': 'DXGI', 'replacements': {
-        # # Оригінал (8 байт): "DXGI.DLL"
-        # # Заміна  (8 байт): "EXGI.DLL"
         # b'DXGI.DLL': b'EXGI.DLL',
         # b'DXGI.dll': b'EXGI.dll',
         # b'dxgi.dll': b'EXGI.dll',
         # b'Dxgi.dll': b'EXGI.dll',
     # }},
+
 }
