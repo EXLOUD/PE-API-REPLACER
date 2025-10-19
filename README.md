@@ -68,7 +68,6 @@
 
 - **OS:** Windows, macOS, or Linux
 - **Python:** 3.10 or higher
-- **Memory:** 100+ MB RAM
 - **Permissions:** Standard user (auto-elevates on Windows)
 - **Native Libraries:** MinGW x64 runtime (included in package)
 
