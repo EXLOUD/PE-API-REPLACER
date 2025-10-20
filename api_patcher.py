@@ -2,6 +2,7 @@
 
 import sys
 import os
+import stat
 import shutil
 import platform
 import subprocess
@@ -34,13 +35,26 @@ except ImportError:
 except Exception as e:
     print(f"❌ Помилка при завантаженні конфігурації: {e}")
     sys.exit(1)
+    
+DONATION_ADDRESSES = {
+    'bitcoin': 'bc1pfnf3ukjn6sdpdujwxav8wlv0p6k5sp5fzwnz8wmdndd57z9yym7slu5dgr',
+    'ethereum': '0x671c0f7d78d777da2b576ca9b6cc559f7e048d5f',
+    'monero': '43myvYnEM8q2g1AULm7dp1XzLRrjZ73VaSnCmvyhSEHHGG1e3weAUFG8RWZhSasbSz9H8jZpGv8LQ8wc9aQHjvfSKW4rt4z',
+    'ton': 'UQCb_q_NLHfYC4Sj0MURw57mYlK6IQXSpOkzBZIyyXnscp7m',
+    'usdt_trc20': 'TFqV65zvK6NfPbtmx1pqVxSYBCjW8Vz23K',
+    'usdt_erc20': '0x671c0f7d78d777da2b576ca9b6cc559f7e048d5f',
+    'usdc_erc20': '0x671c0f7d78d777da2b576ca9b6cc559f7e048d5f',
+    'tron': 'TTFqV65zvK6NfPbtmx1pqVxSYBCjW8Vz23K',
+    'bnb': '0x671c0f7d78d777da2b576ca9b6cc559f7e048d5f',
+    'github': 'https://github.com/EXLOUD'
+}
 
 # =============================================================================
 # 0. ГЛОБАЛЬНІ КОНФІГУРАЦІЇ
 # =============================================================================
 
 APP_TITLE = "PE API Replacer"
-APP_VERSION = "1.0"
+APP_VERSION = "1.0.2"
 
 def sanitize_filename(filename: str) -> str:
     """Видаляє або замінює невалідні для Windows символи з імені файлу."""
@@ -124,66 +138,44 @@ REFINED_STYLESHEET = f"""
         padding: 12px; font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; font-size: 12px;
         line-height: 1.6; color: {REFINED_PALETTE['text_secondary']};
     }}
-    QProgressBar {{ background-color: {REFINED_PALETTE['bg_overlay']}; height: 2px; border-radius: 1px; text-align: center; }}
-    QProgressBar::chunk {{ background-color: {REFINED_PALETTE['accent']}; border-radius: 1px; }}
-    
-    QCheckBox {{
-        color: {REFINED_PALETTE['text']};
-        spacing: 10px;
-        font-size: 13px;
-    }}
-    QCheckBox::indicator {{
-        width: 10px;
-        height: 10px;
-        border-radius: 5px;
-        border: 2px solid {REFINED_PALETTE['border']};
-        background-color: {REFINED_PALETTE['bg_tertiary']};
-    }}
-    QCheckBox::indicator:hover {{
-        border-color: {REFINED_PALETTE['accent']};
-        background-color: {REFINED_PALETTE['bg_overlay']};
-    }}
-    QCheckBox::indicator:checked {{
-        background-color: {REFINED_PALETTE['accent']};
-        border-color: {REFINED_PALETTE['accent']};
-    }}
-    QCheckBox::indicator:checked:hover {{
-        background-color: {REFINED_PALETTE['accent_hover']};
-        border-color: {REFINED_PALETTE['accent_hover']};
-    }}
-    QCheckBox::indicator:disabled {{
-        background-color: {REFINED_PALETTE['bg_overlay']};
-        border-color: {REFINED_PALETTE['text_disabled']};
-        opacity: 0.5;
-    }}    
-    
-    /* Приховуємо квадратик у куті між скролбарами */
-    QScrollArea::corner {{
-        background-color: transparent;
+    QProgressBar {{ 
+        background-color: {REFINED_PALETTE['bg_overlay']}; 
+        height: 5px;
+        border-radius: 5px; 
         border: none;
+        text-align: center;
+        margin: 0px;
+        padding: 0px;
     }}
-    
-    /* Вертикальний скролбар з відступами */
+    QProgressBar::chunk {{ 
+        background-color: {REFINED_PALETTE['accent']}; 
+        border-radius: 5px;
+        margin: 0px;
+        padding: 0px;
+    }}
+
+ /* Вертикальний скролбар з відступами */
     QScrollArea QScrollBar:vertical {{ 
         background-color: transparent; 
-        width: 10px;  /* Трохи ширше для кращої видимості */
-        margin: 20px 4px 20px 4px;  /* Збільшені бокові відступи */
+        width: 16px;
+        margin: 20px 4px 20px 4px;
     }}
     QScrollBar:vertical {{ 
         background-color: {REFINED_PALETTE['bg_overlay']}; 
-        width: 6px;  /* Тонша доріжка */
-        border-radius: 3px;  /* Заокруглення доріжки */
-        margin: 4px 2px;  /* Внутрішні відступи */
+        width: 12px;
+        border-radius: 6px;
+        margin: 4px 2px;
     }}
     QScrollBar::handle:vertical {{ 
         background-color: {REFINED_PALETTE['text_muted']}; 
-        border-radius: 3px;  /* Заокруглені краї ручки */
-        min-height: 50px;  /* Мінімальна висота для зручності */
-        margin: 2px;  /* Відступ від доріжки для ефекту "плаваючої" ручки */
+        border-radius: 6px;
+        min-height: 50px;
+        margin: 2px;
+        width: 12px;
     }}
     QScrollBar::handle:vertical:hover {{ 
-        background-color: {REFINED_PALETTE['accent']}; /* Акцентний колір при наведенні */
-        width: 8px;  /* Трохи ширше при наведенні */
+        background-color: {REFINED_PALETTE['accent']}; 
+        width: 12px;  /* І ТУТ */
     }}
     QScrollBar::handle:vertical:pressed {{ 
         background-color: {REFINED_PALETTE['accent_hover']}; 
@@ -197,24 +189,25 @@ REFINED_STYLESHEET = f"""
     /* Горизонтальний скролбар з відступами */
     QScrollArea QScrollBar:horizontal {{ 
         background-color: transparent; 
-        height: 10px;  /* Трохи вище для кращої видимості */
-        margin: 4px 20px 4px 20px;  /* Збільшені бокові відступи */
+        height: 16px;
+        margin: 4px 20px 4px 20px;
     }}
     QScrollBar:horizontal {{ 
         background-color: {REFINED_PALETTE['bg_overlay']}; 
-        height: 6px;  /* Тонша доріжка */
-        border-radius: 3px;  /* Заокруглення доріжки */
-        margin: 2px 4px;  /* Внутрішні відступи */
+        height: 12px;
+        border-radius: 6px;
+        margin: 2px 4px;
     }}
     QScrollBar::handle:horizontal {{ 
         background-color: {REFINED_PALETTE['text_muted']}; 
-        border-radius: 3px;  /* Заокруглені краї ручки */
-        min-width: 50px;  /* Мінімальна ширина для зручності */
-        margin: 2px;  /* Відступ від доріжки для ефекту "плаваючої" ручки */
+        border-radius: 6px;
+        min-width: 50px;
+        margin: 2px;
+        height: 12px;
     }}
     QScrollBar::handle:horizontal:hover {{ 
-        background-color: {REFINED_PALETTE['accent']}; /* Акцентний колір при наведенні */
-        height: 8px;  /* Трохи вище при наведенні */
+        background-color: {REFINED_PALETTE['accent']}; 
+        height: 12px;
     }}
     QScrollBar::handle:horizontal:pressed {{ 
         background-color: {REFINED_PALETTE['accent_hover']}; 
@@ -223,6 +216,10 @@ REFINED_STYLESHEET = f"""
     QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ 
         width: 0; 
         background: transparent;
+    }}
+    
+    QAbstractScrollArea::corner {{
+        background-color: transparent;
     }}
     
     #Divider {{ background-color: {REFINED_PALETTE['border']}; height: 1px; margin: 10px 0; }}
@@ -249,38 +246,53 @@ def create_subtle_shadow():
 # =============================================================================
 # 2. БЕКЕНД ЛОГІКА
 # =============================================================================
-
 class PermissionsManager:
     def __init__(self, file_path: str, log_callback=None):
-        self.file_path, self.log_callback, self.acl_backup_path, self.permissions_were_changed = file_path, log_callback, None, False
+        self.file_path = file_path
+        self.log_callback = log_callback
+        self.original_permissions = None
+        self.permissions_were_changed = False
+    
     def log(self, message, level="info"):
-        if self.log_callback: self.log_callback(message, level)
-    def _is_windows(self) -> bool: return platform.system() == "Windows"
-    def _run_command(self, command: list) -> bool:
-        try:
-            startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            subprocess.run(command, check=True, capture_output=True, text=True, encoding='cp866', startupinfo=startupinfo)
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            self.log(f"Помилка команди: {e}", "error"); return False
+        if self.log_callback:
+            self.log_callback(message, level)
+    
     def __enter__(self):
-        if not self._is_windows() or os.access(self.file_path, os.W_OK): return self
-        self.log(f"⚠️ Спроба зміни прав для '{os.path.basename(self.file_path)}'...", "warning")
-        safe_filename = "".join(c for c in os.path.basename(self.file_path) if c.isalnum())
-        self.acl_backup_path = os.path.join(tempfile.gettempdir(), f"{safe_filename}.acl.bak")
-        if not self._run_command(['icacls', self.file_path, '/save', self.acl_backup_path, '/c', '/t']): raise PermissionError("Не вдалося зберегти ACL.")
-        if not self._run_command(['takeown', '/f', self.file_path]): self.log("Не вдалося стати власником файлу.", "warning")
-        if not self._run_command(['icacls', self.file_path, '/grant', f'{os.getlogin()}:(F)']):
-            self.__exit__(None, None, None); raise PermissionError("Не вдалося надати права на запис.")
-        self.log("✅ Тимчасово надано повний доступ.", "success"); self.permissions_were_changed = True
-        return self
+        try:
+            # Отримуємо поточні права доступу
+            self.original_permissions = os.stat(self.file_path).st_mode
+            
+            # Перевіряємо, чи файл read-only
+            is_readonly = not (self.original_permissions & stat.S_IWUSR)
+            
+            if is_readonly:
+                self.log(f"⚠️ Файл '{os.path.basename(self.file_path)}' доступний тільки для читання", "warning")
+                self.log(f"   Спроба змінити права доступу...", "info")
+                
+                # Додаємо право на запис для власника
+                new_permissions = self.original_permissions | stat.S_IWUSR
+                os.chmod(self.file_path, new_permissions)
+                
+                self.log(f"✅ Права змінено на read/write", "success")
+                self.permissions_were_changed = True
+            else:
+                self.log(f"✅ Файл доступний для запису", "success")
+            
+            return self
+        
+        except Exception as e:
+            self.log(f"❌ Помилка при зміні прав доступу: {e}", "error")
+            raise PermissionError(f"Не вдалося змінити права доступу: {e}")
+    
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.permissions_were_changed and self.acl_backup_path:
-            self.log("🔄 Відновлення оригінальних прав...", "info")
-            file_dir = os.path.dirname(self.file_path)
-            if not self._run_command(['icacls', file_dir, '/restore', self.acl_backup_path, '/c', '/t']):
-                self.log("❌ Не вдалося відновити права!", "error")
-            else: self.log("✅ Права відновлено.", "success"); os.remove(self.acl_backup_path)
+        # Відновлюємо оригінальні права, якщо вони були змінені
+        if self.permissions_were_changed and self.original_permissions:
+            try:
+                self.log("🔄 Відновлення оригінальних прав доступу...", "info")
+                os.chmod(self.file_path, self.original_permissions)
+                self.log("✅ Права відновлено (read-only)", "success")
+            except Exception as e:
+                self.log(f"❌ Помилка при відновленні прав: {e}", "error")
 
 class UniversalPEPatcher:
     def __init__(self, file_path: str, selected_apis: List[int] = None, log_callback=None):
@@ -454,51 +466,153 @@ class FolderScannerWorker(QObject):
     def cancel(self): self.is_cancelled = True
 
 class PatcherWorker(QObject):
-    log_message = pyqtSignal(str, str); file_status_updated = pyqtSignal(str, str, str); progress_updated = pyqtSignal(int); finished = pyqtSignal(str, str)
+    log_message = pyqtSignal(str, str)
+    file_status_updated = pyqtSignal(str, str, str)
+    progress_updated = pyqtSignal(int)
+    finished = pyqtSignal(str, str, list, list)  # Додаємо списки директорій для видалення
+    
     def __init__(self, files, selected_apis, backup, overwrite):
-        super().__init__(); self.files, self.selected_apis, self.backup_var, self.overwrite_var = files, selected_apis, backup, overwrite
+        super().__init__()
+        self.files = files
+        self.selected_apis = selected_apis
+        self.backup_var = backup
+        self.overwrite_var = overwrite
+    
     def run(self):
         s, e, k, total = 0, 0, 0, len(self.files)
+        patched_dirs = set()
+        backup_dirs = set()
+        
         for i, info in enumerate(self.files):
             path, name = info['path'], sanitize_filename(os.path.basename(info['path']))
-            self.log_message.emit("", ""); self.log_message.emit(f"[{i+1}/{total}] Обробка: {os.path.basename(path)}", "info")
+            self.log_message.emit("", "")
+            self.log_message.emit(f"[{i+1}/{total}] Обробка: {os.path.basename(path)}", "info")
             original_file_data = None
+            
             try:
-                with open(path, 'rb') as f: original_file_data = f.read()
+                with open(path, 'rb') as f:
+                    original_file_data = f.read()
             except Exception as read_err:
-                self.log_message.emit(f"❌ Помилка читання: {read_err}", "error"); e += 1; self.file_status_updated.emit(path, 'error', 'Помилка'); continue
+                self.log_message.emit(f"❌ Помилка читання: {read_err}", "error")
+                e += 1
+                self.file_status_updated.emit(path, 'error', 'Помилка')
+                self.progress_updated.emit(int((i + 1) / total * 100))
+                continue
+            
             patcher = None
             try:
                 with PermissionsManager(path, log_callback=lambda m, l: self.log_message.emit(f"   {m}", l)):
                     patcher = UniversalPEPatcher(path, self.selected_apis, log_callback=lambda m, l: self.log_message.emit(f"   {m}", l))
+                    
                     if not patcher.load_file() or patcher.check_if_patchable() == 0:
-                        self.log_message.emit("⚠️ Немає що патчити", "warning"); k += 1; self.file_status_updated.emit(path, 'warning', 'Пропущено'); continue
+                        self.log_message.emit("⚠️ Немає що патчити", "warning")
+                        k += 1
+                        self.file_status_updated.emit(path, 'warning', 'Пропущено')
+                        self.progress_updated.emit(int((i + 1) / total * 100))
+                        continue
+                    
                     p_count = patcher.patch_all()
+                    
                     if p_count > 0:
+                        # Обробка бекапів
                         if self.backup_var:
-                            b_dir, b_name = os.path.join(os.path.dirname(path), 'backup'), name; os.makedirs(b_dir, exist_ok=True); b_path, cnt = os.path.join(b_dir, b_name), 1
+                            b_dir = os.path.join(os.path.dirname(path), 'backup')
+                            b_name = name
+                            os.makedirs(b_dir, exist_ok=True)
+                            b_path, cnt = os.path.join(b_dir, b_name), 1
                             base, ext = os.path.splitext(b_name)
-                            while os.path.exists(b_path): b_path = os.path.join(b_dir, f"{base}.backup{cnt}{ext}"); cnt += 1
-                            with open(b_path, 'wb') as bf: bf.write(original_file_data); self.log_message.emit(f"📁 Бекап збережено", "success")
-                        p_dir, i_path = os.path.join(os.path.dirname(path), 'patched'), os.path.join(os.path.dirname(path), 'patched', name); os.makedirs(p_dir, exist_ok=True)
-                        if not patcher.save(i_path):
-                            self.log_message.emit("❌ Помилка збереження", "error"); e += 1; self.file_status_updated.emit(path, 'error', 'Помилка'); continue
+                            while os.path.exists(b_path):
+                                b_path = os.path.join(b_dir, f"{base}.backup{cnt}{ext}")
+                                cnt += 1
+                            with open(b_path, 'wb') as bf:
+                                bf.write(original_file_data)
+                            self.log_message.emit(f"📁 Бекап збережено", "success")
+                        else:
+                            b_dir = os.path.join(os.path.dirname(path), 'backup')
+                            if os.path.exists(b_dir):
+                                backup_dirs.add(b_dir)
+                        
+                        p_dir = os.path.join(os.path.dirname(path), 'patched')
+                        i_path = os.path.join(p_dir, name)
+                        os.makedirs(p_dir, exist_ok=True)
+                        
                         if self.overwrite_var:
-                            shutil.move(i_path, path); self.log_message.emit(f"🔄 Оригінал замінено", "info")
-                        self.log_message.emit(f"✅ Пропатчено: {p_count} змін", "success"); s += 1; self.file_status_updated.emit(path, 'success', 'Готово')
-                    else: self.log_message.emit("⚠️ Змін не внесено", "warning"); k += 1; self.file_status_updated.emit(path, 'warning', 'Без змін')
+                            patched_dirs.add(p_dir)
+                        
+                        if not patcher.save(i_path):
+                            self.log_message.emit("❌ Помилка збереження", "error")
+                            e += 1
+                            self.file_status_updated.emit(path, 'error', 'Помилка')
+                            self.progress_updated.emit(int((i + 1) / total * 100))
+                            continue
+                        
+                        if self.overwrite_var:
+                            shutil.move(i_path, path)
+                            self.log_message.emit(f"🔄 Оригінал замінено", "info")
+                        
+                        self.log_message.emit(f"✅ Пропатчено: {p_count} змін", "success")
+                        s += 1
+                        self.file_status_updated.emit(path, 'success', 'Готово')
+                        self.progress_updated.emit(int((i + 1) / total * 100))
+                    else:
+                        self.log_message.emit("⚠️ Змін не внесено", "warning")
+                        k += 1
+                        self.file_status_updated.emit(path, 'warning', 'Без змін')
+                        self.progress_updated.emit(int((i + 1) / total * 100))
+            
             except Exception as err:
-                self.log_message.emit(f"❌ Помилка: {err}", "error"); e += 1; self.file_status_updated.emit(path, 'error', 'Помилка')
+                self.log_message.emit(f"❌ Помилка: {err}", "error")
+                e += 1
+                self.file_status_updated.emit(path, 'error', 'Помилка')
+                self.progress_updated.emit(int((i + 1) / total * 100))
+            
             finally:
-                if patcher: patcher.close()
+                if patcher:
+                    patcher.close()
+            
             self.progress_updated.emit(int((i + 1) / total * 100))
-        summary = [];
-        if s > 0: summary.append(f"{s} пропатчено")
-        if k > 0: summary.append(f"{k} пропущено")
-        if e > 0: summary.append(f"{e} помилок")
+        
+        # Видаляємо непотрібні папки після завершення всіх патчингів
+        self.log_message.emit("", "info")
+        
+        # Видалення папок patched (якщо перезаписуються оригінали)
+        if self.overwrite_var and patched_dirs:
+            self.log_message.emit("🗑️ Видалення папок patched...", "info")
+            for patched_dir in patched_dirs:
+                try:
+                    if os.path.exists(patched_dir) and not os.listdir(patched_dir):
+                        shutil.rmtree(patched_dir)
+                        # self.log_message.emit(f"   ✅ Видалено: {patched_dir}", "success")
+                    elif os.path.exists(patched_dir):
+                        self.log_message.emit(f"   ⚠️ Папка не порожня: {patched_dir}", "warning")
+                except Exception as err:
+                    self.log_message.emit(f"   ❌ Помилка видалення: {err}", "error")
+        
+        # Видалення папок backup (якщо бекапи вимкнені)
+        if not self.backup_var and backup_dirs:
+            self.log_message.emit("🗑️ Видалення папок backup...", "info")
+            for backup_dir in backup_dirs:
+                try:
+                    if os.path.exists(backup_dir) and not os.listdir(backup_dir):
+                        shutil.rmtree(backup_dir)
+                        # self.log_message.emit(f"   ✅ Видалено: {backup_dir}", "success")
+                    elif os.path.exists(backup_dir):
+                        self.log_message.emit(f"   ⚠️ Папка не порожня: {backup_dir}", "warning")
+                except Exception as err:
+                    self.log_message.emit(f"   ❌ Помилка видалення: {err}", "error")
+        
+        summary = []
+        if s > 0:
+            summary.append(f"{s} пропатчено")
+        if k > 0:
+            summary.append(f"{k} пропущено")
+        if e > 0:
+            summary.append(f"{e} помилок")
+        
         result = "Завершено: " + ", ".join(summary) if summary else "Операцій не виконано"
         level = "success" if e == 0 and s > 0 else "error" if e > 0 else "warning"
-        self.finished.emit(result, level)
+        
+        self.finished.emit(result, level, list(patched_dirs), list(backup_dirs))
 
 # =============================================================================
 # 3. REFINED WIDGETS
@@ -1143,7 +1257,9 @@ class PEPatcherGUI(QMainWindow):
         
         self.progress = QProgressBar()
         self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(4)
+        self.progress.setFixedHeight(5)
+        self.progress.setMinimumHeight(5)
+        self.progress.setMaximumHeight(5)
         bottom_layout.addWidget(self.progress)
         
         btn_layout = QHBoxLayout()
@@ -1259,7 +1375,7 @@ class PEPatcherGUI(QMainWindow):
             self.files_container.hide()
         
         self.update_stats()
-        self.log(f"Видалено: {os.path.basename(path)}", "info")
+        # self.log(f"Файл був видалений з списку для пропатчування: {os.path.basename(path)}", "info")
 
     def clear_all(self):
         """Очищення списку файлів з перевіркою активного патчинга"""
@@ -1345,10 +1461,10 @@ class PEPatcherGUI(QMainWindow):
             if status in ['success', 'warning']:  # 'warning' - це пропущені файли
                 QTimer.singleShot(1200, lambda: self.animate_card_removal(path))
 
-    def patching_done(self, summary, level):
+    def patching_done(self, summary, level, patched_dirs=None, backup_dirs=None):
         self.log(summary, level)
         self.patch_btn.setEnabled(True)
-        self.patch_btn.setText("Почати патчинг")  # Повертаємо оригінальний текст
+        self.patch_btn.setText("Почати патчинг")
         self.progress.setValue(0)
         
         # Розблоковуємо свайп для всіх файлів після патчингу
@@ -1358,7 +1474,103 @@ class PEPatcherGUI(QMainWindow):
         QMessageBox.information(self, "Завершено", summary)
 
     def show_about(self):
-        QMessageBox.about(self, "Про програму", f"""<h2>{APP_TITLE} {APP_VERSION}</h2><p>Мінімалістичний витончений дизайн.</p>""")
+        from PyQt6.QtWidgets import QTextBrowser
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        
+        # Створюємо кастомний діалог
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Про програму")
+        dialog.setFixedSize(600, 640)
+        dialog.setStyleSheet(REFINED_STYLESHEET)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        
+        about_text = f"""
+        <h2>{APP_TITLE} {APP_VERSION}</h2>
+        
+        <hr style="margin: 12px 0; border: none; border-top: 1px solid rgba(139, 127, 184, 0.3);">
+        
+        <p style="font-size: 13px; margin-top: 12px;">
+            <b>Автор:</b> <a href="https://github.com/EXLOUD" style="color: #8B7FB8; text-decoration: none;">github.com/EXLOUD</a>
+        </p>
+        """
+        
+        # TextBrowser для відображення HTML
+        text_browser = QTextBrowser()
+        text_browser.setHtml(about_text)
+        text_browser.setReadOnly(True)
+        text_browser.setOpenExternalLinks(True)
+        
+        # Scroll area для всього вмісту
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(12)
+        
+        # ============================================================
+        # КРИПТО АДРЕСИ
+        # ============================================================
+        addresses_panel = QWidget()
+        addresses_layout = QVBoxLayout(addresses_panel)
+        addresses_layout.setContentsMargins(0, 0, 0, 0)
+        addresses_layout.setSpacing(8)
+        
+        title_label = QLabel("💰 Донат (натисніть щоб скопіювати):")
+        title_label.setProperty("class", "caption")
+        addresses_layout.addWidget(title_label)
+        
+        address_buttons = [
+            ("Bitcoin", "bitcoin"),
+            ("Ethereum", "ethereum"),
+            ("Monero", "monero"),
+            ("TON", "ton"),
+            ("USDT (TRC20)", "usdt_trc20"),
+            ("USDT (ERC20)", "usdt_erc20"),
+            ("USDC (ERC20)", "usdc_erc20"),
+            ("Tron", "tron"),
+            ("BNB", "bnb"),
+        ]
+        
+        for name, key in address_buttons:
+            btn = QPushButton(f"📋 {name}")
+            btn.setStyleSheet(STANDARD_BUTTON_STYLE)
+            btn.setMinimumHeight(36)
+            btn.setProperty("variant", "secondary")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            
+            def copy_address(checked, addr_key=key):
+                address = DONATION_ADDRESSES[addr_key]
+                clipboard = QApplication.clipboard()
+                clipboard.setText(address)
+                self.log(f"✅ Скопійовано {addr_key.upper()}: {address[:15]}...", "success")
+            
+            btn.clicked.connect(copy_address)
+            addresses_layout.addWidget(btn)
+        
+        scroll_layout.addWidget(addresses_panel)
+        scroll_layout.addStretch()
+        
+        layout.addWidget(text_browser, 1)
+        layout.addWidget(scroll_widget, 1)
+        
+        # ============================================================
+        # КНОПКА ЗАКРИТТЯ
+        # ============================================================
+        close_btn = QPushButton("Закрити")
+        close_btn.setStyleSheet(STANDARD_BUTTON_STYLE)
+        close_btn.setFixedWidth(120)
+        close_btn.clicked.connect(dialog.accept)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(close_btn)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        
+        dialog.exec()
 
 # =============================================================================
 # 5. ENTRY POINT
