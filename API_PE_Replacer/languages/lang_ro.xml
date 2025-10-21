@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_name">Română</string>
+	
+    <!-- Titles & UI -->
+    <string name="app_title">PE API Replacer</string>
+    <string name="version">Versiune</string>
+    <string name="files">fișiere</string>
+    <string name="add_files">Adaugă fișiere</string>
+    <string name="add_folder">Adaugă folder</string>
+    <string name="start_patching">Începe patching</string>
+    <string name="clear_all">Șterge tot</string>
+    <string name="files_not_added">Niciun fișier adăugat</string>
+    <string name="add_pe_files_hint">Adaugă fișiere PE pentru a începe</string>
+    <string name="settings">Setări</string>
+    <string name="logs">Jurnale</string>
+    <string name="clear">Șterge</string>
+    <string name="about">Despre</string>
+    <string name="api_group_title">API-uri de înlocuit</string>
+    <string name="all_apis">Toate API-urile</string>
+    <string name="options_group_title">Opțiuni de salvare</string>
+    <string name="create_backups">Creează backup-uri</string>
+    <string name="overwrite_originals">Suprascrie originalele</string>
+    <string name="cancel">Anulează</string>
+    <string name="cancelling">Se anulează...</string>
+    <string name="close">Închide</string>
+    <string name="author">Autor</string>
+    <string name="donation_title">💰 Donează (click pentru copiere):</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_select_pe_files">Selectează fișiere PE</string>
+    <string name="dialog_pe_files_filter">Fișiere PE (*.exe *.dll *.vst3 *.vst *.sys);;Toate fișierele (*)</string>
+    <string name="dialog_search_option">Opțiune de căutare</string>
+    <string name="dialog_search_subfolders">Cauta în subfoldere?</string>
+    <string name="dialog_yes_recursive">Da (recursiv)</string>
+    <string name="dialog_no_folder_only">Nu (doar în acest folder)</string>
+    <string name="dialog_cancel">Anulează</string>
+    <string name="dialog_select_folder">Selectează folder</string>
+    <string name="dialog_op_in_progress">Operație în curs</string>
+    <string name="dialog_cannot_clear">Nu se poate șterge lista în timp ce o sarcină se execută.</string>
+    <string name="dialog_list_empty">Lista este goală</string>
+    <string name="dialog_no_files_to_clear">Niciun fișier de șters.</string>
+    <string name="dialog_confirmation">Confirmare</string>
+    <string name="dialog_clear_all_q">Elimini toate fișierele din listă?</string>
+    <string name="dialog_completed_title">Completat</string>
+    <string name="warning_title">Avertisment</string>
+    <string name="warning_no_files">Niciun fișier pentru patching</string>
+    <string name="warning_no_api">Selectează cel puțin un API</string>
+    <string name="task_analyzing_files">Analiza fișierelor</string>
+    <string name="task_patching_files">Patchare fișiere</string>
+    <string name="scan_folder_title">Scanare folder</string>
+    <string name="scanning_status_searching">Se caută...</string>
+    <string name="add_n_files">Adaugă {0} fișiere</string>
+    <string name="found_n_files">Găsite {0} fișiere</string>
+    <string name="no_pe_files_found">Niciun fișier PE găsit</string>
+    <string name="skipped_folders_info">ℹ️ Foldere omise: </string>
+    
+    <!-- Logs -->
+    <string name="log_app_started">Pornit {0} v{1}</string>
+    <string name="log_scanning_folder">Se scanează: {0}{1}</string>
+    <string name="log_with_subfolders"> (cu subfoldere)</string>
+    <string name="log_all_files_added">Toate fișierele selectate sunt deja în listă</string>
+    <string name="log_files_added">Adăugate {0} fișiere</string>
+    <string name="log_files_skipped">Omise {0} fișiere (nu PE)</string>
+    <string name="log_list_cleared">Lista de fișiere ștearsă</string>
+    <string name="log_cleared">Jurnale șterse</string>
+    <string name="log_operation_stopped">Operație opritită.</string>
+    <string name="log_copied">✅ Copiat {0}: {1}...</string>
+    <string name="log_cancel_request">Cerere de anulare primită...</string>
+    <string name="log_patching_cancelled">Procesul de patching anulat de utilizator.</string>
+    <string name="log_processing_file">Prelucrare: {0} {1}</string>
+    <string name="log_read_error">❌ Eroare de citire: {0}</string>
+    <string name="log_nothing_to_patch">⚠️ Nimic de patcuat</string>
+    <string name="log_backup_saved">📁 Backup salvat: {0}</string>
+    <string name="log_original_replaced">📄 Original înlocuit</string>
+    <string name="log_move_error">❌ Eroare de mutare fișier: {0}</string>
+    <string name="log_general_error">❌ Eroare generală: {0}</string>
+    <string name="log_readonly_file">⚠️ Fișierul '{0}' este doar pentru citire. Schimbă permisiuni...</string>
+    <string name="log_changing_perms">   Încercare de schimbare permisiuni...</string>
+    <string name="log_perms_changed">✅ Permisiuni schimbate la citire/scriere</string>
+    <string name="log_perms_error">❌ Eroare la schimbarea permisiunilor: {0}</string>
+    <string name="log_restoring_perms">📄 Restaurare permisiuni originale...</string>
+    <string name="log_perms_restored">✅ Permisiuni restaurate</string>
+    <string name="log_restore_perms_error">❌ Eroare la restaurarea permisiunilor: {0}</string>
+    <string name="log_load_error">❌ Eroare de încărcare: {0}</string>
+    <string name="log_patch_details_header">📊 Detalii înainte de patching:</string>
+    <string name="log_patch_details_iat">   [IAT] {0}</string>
+    <string name="log_patch_details_hex">   [HEX] {0}</string>
+    <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] Omis {0}, înlocuire prea lungă.</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] Omitere {0}, lungime nepotrivită.</string>
+    <string name="log_patch_stats_header">📈 Statistici finale patching:</string>
+    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
+    <string name="log_total_changes">   TOTAL: {0} modificări</string>
+    <string name="log_file_saved">💾 Salvat: {0}</string>
+    <string name="log_save_error">❌ Eroare de salvare: {0}</string>
+    
+    <!-- File Statuses -->
+    <string name="status_ready">Gata</string>
+    <string name="status_cancelled">Anulat</string>
+    <string name="status_error">Eroare</string>
+    <string name="status_done">Finalizat</string>
+    <string name="status_skipped">Omis</string>
+    <string name="status_no_changes">Fără modificări</string>
+
+    <!-- Summaries -->
+    <string name="summary_patched">{0} patcat</string>
+    <string name="summary_skipped">{0} omis</string>
+    <string name="summary_errors">{0} cu erori</string>
+    <string name="summary_cancelled_prefix">Anulat: </string>
+    <string name="summary_finished_prefix">Finalizat: </string>
+    <string name="summary_no_ops">Nicio operație efectuată</string>
+</resources>

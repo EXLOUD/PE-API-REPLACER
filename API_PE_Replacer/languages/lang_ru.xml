@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_name">Русский</string>
+	
+    <!-- Titles & UI -->
+    <string name="app_title">PE API Replacer</string>
+    <string name="version">Версия</string>
+    <string name="files">файлы</string>
+    <string name="add_files">Добавить файлы</string>
+    <string name="add_folder">Добавить папку</string>
+    <string name="start_patching">Начать патчинг</string>
+    <string name="clear_all">Очистить все</string>
+    <string name="files_not_added">Файлы не добавлены</string>
+    <string name="add_pe_files_hint">Добавьте PE файлы для начала</string>
+    <string name="settings">Параметры</string>
+    <string name="logs">Журналы</string>
+    <string name="clear">Очистить</string>
+    <string name="about">О программе</string>
+    <string name="api_group_title">API для замены</string>
+    <string name="all_apis">Все API</string>
+    <string name="options_group_title">Параметры сохранения</string>
+    <string name="create_backups">Создавать резервные копии</string>
+    <string name="overwrite_originals">Перезаписать оригиналы</string>
+    <string name="cancel">Отмена</string>
+    <string name="cancelling">Отмена...</string>
+    <string name="close">Закрыть</string>
+    <string name="author">Автор</string>
+    <string name="donation_title">💰 Пожертвовать (нажмите для копирования):</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_select_pe_files">Выберите PE файлы</string>
+    <string name="dialog_pe_files_filter">PE файлы (*.exe *.dll *.vst3 *.vst *.sys);;Все файлы (*)</string>
+    <string name="dialog_search_option">Опция поиска</string>
+    <string name="dialog_search_subfolders">Искать в подпапках?</string>
+    <string name="dialog_yes_recursive">Да (рекурсивно)</string>
+    <string name="dialog_no_folder_only">Нет (только в этой папке)</string>
+    <string name="dialog_cancel">Отмена</string>
+    <string name="dialog_select_folder">Выберите папку</string>
+    <string name="dialog_op_in_progress">Операция выполняется</string>
+    <string name="dialog_cannot_clear">Невозможно очистить список во время выполнения задачи.</string>
+    <string name="dialog_list_empty">Список пуст</string>
+    <string name="dialog_no_files_to_clear">Нет файлов для очистки.</string>
+    <string name="dialog_confirmation">Подтверждение</string>
+    <string name="dialog_clear_all_q">Удалить все файлы из списка?</string>
+    <string name="dialog_completed_title">Завершено</string>
+    <string name="warning_title">Предупреждение</string>
+    <string name="warning_no_files">Нет файлов для патчинга</string>
+    <string name="warning_no_api">Выберите хотя бы один API</string>
+    <string name="task_analyzing_files">Анализ файлов</string>
+    <string name="task_patching_files">Патчинг файлов</string>
+    <string name="scan_folder_title">Сканирование папки</string>
+    <string name="scanning_status_searching">Поиск...</string>
+    <string name="add_n_files">Добавить {0} файлов</string>
+    <string name="found_n_files">Найдено {0} файлов</string>
+    <string name="no_pe_files_found">PE файлы не найдены</string>
+    <string name="skipped_folders_info">ℹ️ Пропущенные папки: </string>
+    
+    <!-- Logs -->
+    <string name="log_app_started">Запущена {0} v{1}</string>
+    <string name="log_scanning_folder">Сканирование: {0}{1}</string>
+    <string name="log_with_subfolders"> (с подпапками)</string>
+    <string name="log_all_files_added">Все выбранные файлы уже в списке</string>
+    <string name="log_files_added">Добавлено {0} файлов</string>
+    <string name="log_files_skipped">Пропущено {0} файлов (не PE)</string>
+    <string name="log_list_cleared">Список файлов очищен</string>
+    <string name="log_cleared">Журналы очищены</string>
+    <string name="log_operation_stopped">Операция остановлена.</string>
+    <string name="log_copied">✅ Скопировано {0}: {1}...</string>
+    <string name="log_cancel_request">Получен запрос отмены...</string>
+    <string name="log_patching_cancelled">Процесс патчинга отменен пользователем.</string>
+    <string name="log_processing_file">Обработка: {0} {1}</string>
+    <string name="log_read_error">❌ Ошибка чтения: {0}</string>
+    <string name="log_nothing_to_patch">⚠️ Нечего патчить</string>
+    <string name="log_backup_saved">📁 Резервная копия сохранена: {0}</string>
+    <string name="log_original_replaced">📄 Оригинал заменен</string>
+    <string name="log_move_error">❌ Ошибка перемещения файла: {0}</string>
+    <string name="log_general_error">❌ Общая ошибка: {0}</string>
+    <string name="log_readonly_file">⚠️ Файл '{0}' только для чтения. Изменение прав доступа...</string>
+    <string name="log_changing_perms">   Попытка изменения прав доступа...</string>
+    <string name="log_perms_changed">✅ Права доступа изменены на чтение/запись</string>
+    <string name="log_perms_error">❌ Ошибка изменения прав доступа: {0}</string>
+    <string name="log_restoring_perms">📄 Восстановление исходных прав доступа...</string>
+    <string name="log_perms_restored">✅ Права доступа восстановлены</string>
+    <string name="log_restore_perms_error">❌ Ошибка восстановления прав доступа: {0}</string>
+    <string name="log_load_error">❌ Ошибка загрузки: {0}</string>
+    <string name="log_patch_details_header">📊 Детали до патчинга:</string>
+    <string name="log_patch_details_iat">   [IAT] {0}</string>
+    <string name="log_patch_details_hex">   [HEX] {0}</string>
+    <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] Пропущено {0}, замена слишком длинная.</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] Пропуск {0}, несоответствие длины.</string>
+    <string name="log_patch_stats_header">📈 Финальная статистика патчинга:</string>
+    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
+    <string name="log_total_changes">   ВСЕГО: {0} изменений</string>
+    <string name="log_file_saved">💾 Сохранено: {0}</string>
+    <string name="log_save_error">❌ Ошибка сохранения: {0}</string>
+    
+    <!-- File Statuses -->
+    <string name="status_ready">Готово</string>
+    <string name="status_cancelled">Отменено</string>
+    <string name="status_error">Ошибка</string>
+    <string name="status_done">Завершено</string>
+    <string name="status_skipped">Пропущено</string>
+    <string name="status_no_changes">Нет изменений</string>
+
+    <!-- Summaries -->
+    <string name="summary_patched">{0} запатчено</string>
+    <string name="summary_skipped">{0} пропущено</string>
+    <string name="summary_errors">{0} с ошибками</string>
+    <string name="summary_cancelled_prefix">Отменено: </string>
+    <string name="summary_finished_prefix">Завершено: </string>
+    <string name="summary_no_ops">Операции не выполнены</string>
+</resources>

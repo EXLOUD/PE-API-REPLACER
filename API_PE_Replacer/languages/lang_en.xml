@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_name">English</string>
+	
+    <!-- Titles & UI -->
+    <string name="app_title">PE API Replacer</string>
+    <string name="version">Version</string>
+    <string name="files">files</string>
+    <string name="add_files">Add Files</string>
+    <string name="add_folder">Add Folder</string>
+    <string name="start_patching">Start Patching</string>
+    <string name="clear_all">Clear All</string>
+    <string name="files_not_added">No files added</string>
+    <string name="add_pe_files_hint">Add PE files to get started</string>
+    <string name="settings">Settings</string>
+    <string name="logs">Logs</string>
+    <string name="clear">Clear</string>
+    <string name="about">About</string>
+    <string name="api_group_title">APIs to Replace</string>
+    <string name="all_apis">All APIs</string>
+    <string name="options_group_title">Save Options</string>
+    <string name="create_backups">Create backups</string>
+    <string name="overwrite_originals">Overwrite originals</string>
+    <string name="cancel">Cancel</string>
+    <string name="cancelling">Cancelling...</string>
+    <string name="close">Close</string>
+    <string name="author">Author</string>
+    <string name="donation_title">💰 Donate (click to copy):</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_select_pe_files">Select PE Files</string>
+    <string name="dialog_pe_files_filter">PE Files (*.exe *.dll *.vst3 *.vst *.sys);;All files (*)</string>
+    <string name="dialog_search_option">Search Option</string>
+    <string name="dialog_search_subfolders">Search in subfolders?</string>
+    <string name="dialog_yes_recursive">Yes (recursively)</string>
+    <string name="dialog_no_folder_only">No (this folder only)</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_select_folder">Select Folder</string>
+    <string name="dialog_op_in_progress">Operation in progress</string>
+    <string name="dialog_cannot_clear">Cannot clear the list while a task is running.</string>
+    <string name="dialog_list_empty">List is empty</string>
+    <string name="dialog_no_files_to_clear">No files to clear.</string>
+    <string name="dialog_confirmation">Confirmation</string>
+    <string name="dialog_clear_all_q">Remove all files from the list?</string>
+    <string name="dialog_completed_title">Completed</string>
+    <string name="warning_title">Warning</string>
+    <string name="warning_no_files">No files to patch</string>
+    <string name="warning_no_api">Select at least one API</string>
+    <string name="task_analyzing_files">Analyzing files</string>
+    <string name="task_patching_files">Patching files</string>
+    <string name="scan_folder_title">Scanning Folder</string>
+    <string name="scanning_status_searching">Searching...</string>
+    <string name="add_n_files">Add {0} files</string>
+    <string name="found_n_files">Found {0} files</string>
+    <string name="no_pe_files_found">No PE files found</string>
+    <string name="skipped_folders_info">ℹ️ Skipped folders: </string>
+    
+    <!-- Logs -->
+    <string name="log_app_started">Started {0} v{1}</string>
+    <string name="log_scanning_folder">Scanning: {0}{1}</string>
+    <string name="log_with_subfolders"> (with subfolders)</string>
+    <string name="log_all_files_added">All selected files are already in the list</string>
+    <string name="log_files_added">Added {0} files</string>
+    <string name="log_files_skipped">Skipped {0} files (not PE)</string>
+    <string name="log_list_cleared">File list cleared</string>
+    <string name="log_cleared">Logs cleared</string>
+    <string name="log_operation_stopped">Operation was stopped.</string>
+    <string name="log_copied">✅ Copied {0}: {1}...</string>
+    <string name="log_cancel_request">Cancel request received...</string>
+    <string name="log_patching_cancelled">Patching process cancelled by user.</string>
+    <string name="log_processing_file">Processing: {0} {1}</string>
+    <string name="log_read_error">❌ Read error: {0}</string>
+    <string name="log_nothing_to_patch">⚠️ Nothing to patch</string>
+    <string name="log_backup_saved">📁 Backup saved: {0}</string>
+    <string name="log_original_replaced">🔄 Original replaced</string>
+    <string name="log_move_error">❌ File move error: {0}</string>
+    <string name="log_general_error">❌ General error: {0}</string>
+    <string name="log_readonly_file">⚠️ File '{0}' is read-only. Changing permissions...</string>
+    <string name="log_changing_perms">   Attempting to change permissions...</string>
+    <string name="log_perms_changed">✅ Permissions changed to read/write</string>
+    <string name="log_perms_error">❌ Error changing permissions: {0}</string>
+    <string name="log_restoring_perms">🔄 Restoring original permissions...</string>
+    <string name="log_perms_restored">✅ Permissions restored</string>
+    <string name="log_restore_perms_error">❌ Error restoring permissions: {0}</string>
+    <string name="log_load_error">❌ Load error: {0}</string>
+    <string name="log_patch_details_header">📊 Details before patching:</string>
+    <string name="log_patch_details_iat">   [IAT] {0}</string>
+    <string name="log_patch_details_hex">   [HEX] {0}</string>
+    <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] Skipped {0}, replacement is too long.</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] Skipping {0}, length mismatch.</string>
+    <string name="log_patch_stats_header">📈 Final patch statistics:</string>
+    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
+    <string name="log_total_changes">   TOTAL: {0} changes</string>
+    <string name="log_file_saved">💾 Saved: {0}</string>
+    <string name="log_save_error">❌ Save error: {0}</string>
+    
+    <!-- File Statuses -->
+    <string name="status_ready">Ready</string>
+    <string name="status_cancelled">Cancelled</string>
+    <string name="status_error">Error</string>
+    <string name="status_done">Done</string>
+    <string name="status_skipped">Skipped</string>
+    <string name="status_no_changes">No changes</string>
+
+    <!-- Summaries -->
+    <string name="summary_patched">{0} patched</string>
+    <string name="summary_skipped">{0} skipped</string>
+    <string name="summary_errors">{0} with errors</string>
+    <string name="summary_cancelled_prefix">Cancelled: </string>
+    <string name="summary_finished_prefix">Finished: </string>
+    <string name="summary_no_ops">No operations performed</string>
+</resources>

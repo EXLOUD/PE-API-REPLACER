@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_name">日本語</string>
+	
+    <!-- Titles & UI -->
+    <string name="app_title">PE API Replacer</string>
+    <string name="version">バージョン</string>
+    <string name="files">ファイル</string>
+    <string name="add_files">ファイルを追加</string>
+    <string name="add_folder">フォルダを追加</string>
+    <string name="start_patching">パッチング開始</string>
+    <string name="clear_all">すべてクリア</string>
+    <string name="files_not_added">ファイルが追加されていません</string>
+    <string name="add_pe_files_hint">開始するためにPEファイルを追加してください</string>
+    <string name="settings">設定</string>
+    <string name="logs">ログ</string>
+    <string name="clear">クリア</string>
+    <string name="about">について</string>
+    <string name="api_group_title">置換するAPI</string>
+    <string name="all_apis">すべてのAPI</string>
+    <string name="options_group_title">保存オプション</string>
+    <string name="create_backups">バックアップを作成</string>
+    <string name="overwrite_originals">オリジナルを上書き</string>
+    <string name="cancel">キャンセル</string>
+    <string name="cancelling">キャンセル中...</string>
+    <string name="close">閉じる</string>
+    <string name="author">作成者</string>
+    <string name="donation_title">💰 寄付 (クリックしてコピー):</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_select_pe_files">PEファイルを選択</string>
+    <string name="dialog_pe_files_filter">PEファイル (*.exe *.dll *.vst3 *.vst *.sys);;すべてのファイル (*)</string>
+    <string name="dialog_search_option">検索オプション</string>
+    <string name="dialog_search_subfolders">サブフォルダも検索しますか?</string>
+    <string name="dialog_yes_recursive">はい (再帰的)</string>
+    <string name="dialog_no_folder_only">いいえ (このフォルダのみ)</string>
+    <string name="dialog_cancel">キャンセル</string>
+    <string name="dialog_select_folder">フォルダを選択</string>
+    <string name="dialog_op_in_progress">操作中</string>
+    <string name="dialog_cannot_clear">タスク実行中はリストをクリアできません。</string>
+    <string name="dialog_list_empty">リストが空です</string>
+    <string name="dialog_no_files_to_clear">クリアするファイルがありません。</string>
+    <string name="dialog_confirmation">確認</string>
+    <string name="dialog_clear_all_q">リストからすべてのファイルを削除しますか?</string>
+    <string name="dialog_completed_title">完了</string>
+    <string name="warning_title">警告</string>
+    <string name="warning_no_files">パッチングするファイルがありません</string>
+    <string name="warning_no_api">少なくとも1つのAPIを選択してください</string>
+    <string name="task_analyzing_files">ファイルを分析中</string>
+    <string name="task_patching_files">ファイルをパッチング中</string>
+    <string name="scan_folder_title">フォルダをスキャン</string>
+    <string name="scanning_status_searching">検索中...</string>
+    <string name="add_n_files">{0}個のファイルを追加</string>
+    <string name="found_n_files">{0}個のファイルが見つかりました</string>
+    <string name="no_pe_files_found">PEファイルが見つかりません</string>
+    <string name="skipped_folders_info">ℹ️ スキップされたフォルダ: </string>
+    
+    <!-- Logs -->
+    <string name="log_app_started">{0} v{1}を起動しました</string>
+    <string name="log_scanning_folder">スキャン中: {0}{1}</string>
+    <string name="log_with_subfolders"> (サブフォルダ含む)</string>
+    <string name="log_all_files_added">選択されたすべてのファイルはすでにリストにあります</string>
+    <string name="log_files_added">{0}個のファイルを追加しました</string>
+    <string name="log_files_skipped">{0}個のファイルをスキップしました (PE ではない)</string>
+    <string name="log_list_cleared">ファイルリストをクリアしました</string>
+    <string name="log_cleared">ログをクリアしました</string>
+    <string name="log_operation_stopped">操作が停止されました。</string>
+    <string name="log_copied">✅ コピーしました {0}: {1}...</string>
+    <string name="log_cancel_request">キャンセル要求を受け取りました...</string>
+    <string name="log_patching_cancelled">パッチングプロセスがユーザーによってキャンセルされました。</string>
+    <string name="log_processing_file">処理中: {0} {1}</string>
+    <string name="log_read_error">❌ 読み込みエラー: {0}</string>
+    <string name="log_nothing_to_patch">⚠️ パッチングするものがありません</string>
+    <string name="log_backup_saved">📁 バックアップを保存しました: {0}</string>
+    <string name="log_original_replaced">📄 オリジナルが置換されました</string>
+    <string name="log_move_error">❌ ファイル移動エラー: {0}</string>
+    <string name="log_general_error">❌ 一般的なエラー: {0}</string>
+    <string name="log_readonly_file">⚠️ ファイル '{0}' は読み取り専用です。権限を変更中...</string>
+    <string name="log_changing_perms">   権限を変更しようとしています...</string>
+    <string name="log_perms_changed">✅ 権限を読み取り/書き込みに変更しました</string>
+    <string name="log_perms_error">❌ 権限変更エラー: {0}</string>
+    <string name="log_restoring_perms">📄 元の権限を復元中...</string>
+    <string name="log_perms_restored">✅ 権限を復元しました</string>
+    <string name="log_restore_perms_error">❌ 権限復元エラー: {0}</string>
+    <string name="log_load_error">❌ 読み込みエラー: {0}</string>
+    <string name="log_patch_details_header">📊 パッチング前の詳細:</string>
+    <string name="log_patch_details_iat">   [IAT] {0}</string>
+    <string name="log_patch_details_hex">   [HEX] {0}</string>
+    <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] {0} をスキップしました、置換が長すぎます。</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] {0} をスキップしています、長さが一致しません。</string>
+    <string name="log_patch_stats_header">📈 最終パッチング統計:</string>
+    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
+    <string name="log_total_changes">   合計: {0}個の変更</string>
+    <string name="log_file_saved">💾 保存しました: {0}</string>
+    <string name="log_save_error">❌ 保存エラー: {0}</string>
+    
+    <!-- File Statuses -->
+    <string name="status_ready">準備完了</string>
+    <string name="status_cancelled">キャンセル済み</string>
+    <string name="status_error">エラー</string>
+    <string name="status_done">完了</string>
+    <string name="status_skipped">スキップ</string>
+    <string name="status_no_changes">変更なし</string>
+
+    <!-- Summaries -->
+    <string name="summary_patched">{0}個がパッチされました</string>
+    <string name="summary_skipped">{0}個がスキップされました</string>
+    <string name="summary_errors">{0}個がエラーです</string>
+    <string name="summary_cancelled_prefix">キャンセル: </string>
+    <string name="summary_finished_prefix">完了: </string>
+    <string name="summary_no_ops">操作は実行されません</string>
+</resources>

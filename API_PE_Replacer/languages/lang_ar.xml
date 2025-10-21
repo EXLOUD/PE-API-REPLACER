@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_name">العربية</string>
+	
+    <!-- Titles & UI -->
+    <string name="app_title">PE API Replacer</string>
+    <string name="version">الإصدار</string>
+    <string name="files">الملفات</string>
+    <string name="add_files">إضافة ملفات</string>
+    <string name="add_folder">إضافة مجلد</string>
+    <string name="start_patching">ابدأ الإصلاح</string>
+    <string name="clear_all">مسح الكل</string>
+    <string name="files_not_added">لم تتم إضافة ملفات</string>
+    <string name="add_pe_files_hint">أضف ملفات PE للبدء</string>
+    <string name="settings">الإعدادات</string>
+    <string name="logs">السجلات</string>
+    <string name="clear">مسح</string>
+    <string name="about">حول</string>
+    <string name="api_group_title">واجهات برمجية للاستبدال</string>
+    <string name="all_apis">جميع واجهات برمجية</string>
+    <string name="options_group_title">خيارات الحفظ</string>
+    <string name="create_backups">إنشاء نسخ احتياطية</string>
+    <string name="overwrite_originals">استبدال الملفات الأصلية</string>
+    <string name="cancel">إلغاء</string>
+    <string name="cancelling">جاري الإلغاء...</string>
+    <string name="close">إغلاق</string>
+    <string name="author">المؤلف</string>
+    <string name="donation_title">💰 تبرع (انقر لنسخ):</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_select_pe_files">اختر ملفات PE</string>
+    <string name="dialog_pe_files_filter">ملفات PE (*.exe *.dll *.vst3 *.vst *.sys);;جميع الملفات (*)</string>
+    <string name="dialog_search_option">خيار البحث</string>
+    <string name="dialog_search_subfolders">البحث في المجلدات الفرعية؟</string>
+    <string name="dialog_yes_recursive">نعم (بشكل متكرر)</string>
+    <string name="dialog_no_folder_only">لا (هذا المجلد فقط)</string>
+    <string name="dialog_cancel">إلغاء</string>
+    <string name="dialog_select_folder">اختر مجلد</string>
+    <string name="dialog_op_in_progress">العملية جارية</string>
+    <string name="dialog_cannot_clear">لا يمكن مسح القائمة أثناء تنفيذ مهمة.</string>
+    <string name="dialog_list_empty">القائمة فارغة</string>
+    <string name="dialog_no_files_to_clear">لا توجد ملفات للمسح.</string>
+    <string name="dialog_confirmation">تأكيد</string>
+    <string name="dialog_clear_all_q">هل تريد إزالة جميع الملفات من القائمة؟</string>
+    <string name="dialog_completed_title">تم</string>
+    <string name="warning_title">تحذير</string>
+    <string name="warning_no_files">لا توجد ملفات للإصلاح</string>
+    <string name="warning_no_api">اختر واجهة برمجية واحدة على الأقل</string>
+    <string name="task_analyzing_files">تحليل الملفات</string>
+    <string name="task_patching_files">إصلاح الملفات</string>
+    <string name="scan_folder_title">مسح المجلد</string>
+    <string name="scanning_status_searching">جاري البحث...</string>
+    <string name="add_n_files">أضف {0} ملفات</string>
+    <string name="found_n_files">تم العثور على {0} ملفات</string>
+    <string name="no_pe_files_found">لم يتم العثور على ملفات PE</string>
+    <string name="skipped_folders_info">ℹ️ المجلدات المتخطاة: </string>
+    
+    <!-- Logs -->
+    <string name="log_app_started">تم بدء {0} v{1}</string>
+    <string name="log_scanning_folder">جاري المسح: {0}{1}</string>
+    <string name="log_with_subfolders"> (مع المجلدات الفرعية)</string>
+    <string name="log_all_files_added">جميع الملفات المحددة موجودة بالفعل في القائمة</string>
+    <string name="log_files_added">تم إضافة {0} ملفات</string>
+    <string name="log_files_skipped">تم تخطي {0} ملفات (ليست PE)</string>
+    <string name="log_list_cleared">تم مسح قائمة الملفات</string>
+    <string name="log_cleared">تم مسح السجلات</string>
+    <string name="log_operation_stopped">تم إيقاف العملية.</string>
+    <string name="log_copied">✅ تم النسخ {0}: {1}...</string>
+    <string name="log_cancel_request">تم استقبال طلب الإلغاء...</string>
+    <string name="log_patching_cancelled">تم إلغاء عملية الإصلاح من قبل المستخدم.</string>
+    <string name="log_processing_file">جاري المعالجة: {0} {1}</string>
+    <string name="log_read_error">❌ خطأ القراءة: {0}</string>
+    <string name="log_nothing_to_patch">⚠️ لا توجد أشياء للإصلاح</string>
+    <string name="log_backup_saved">📁 تم حفظ النسخة الاحتياطية: {0}</string>
+    <string name="log_original_replaced">📄 تم استبدال الملف الأصلي</string>
+    <string name="log_move_error">❌ خطأ نقل الملف: {0}</string>
+    <string name="log_general_error">❌ خطأ عام: {0}</string>
+    <string name="log_readonly_file">⚠️ الملف '{0}' للقراءة فقط. جاري تغيير الأذونات...</string>
+    <string name="log_changing_perms">   محاولة تغيير الأذونات...</string>
+    <string name="log_perms_changed">✅ تم تغيير الأذونات إلى القراءة والكتابة</string>
+    <string name="log_perms_error">❌ خطأ في تغيير الأذونات: {0}</string>
+    <string name="log_restoring_perms">📄 استعادة الأذونات الأصلية...</string>
+    <string name="log_perms_restored">✅ تم استعادة الأذونات</string>
+    <string name="log_restore_perms_error">❌ خطأ في استعادة الأذونات: {0}</string>
+    <string name="log_load_error">❌ خطأ التحميل: {0}</string>
+    <string name="log_patch_details_header">📊 التفاصيل قبل الإصلاح:</string>
+    <string name="log_patch_details_iat">   [IAT] {0}</string>
+    <string name="log_patch_details_hex">   [HEX] {0}</string>
+    <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] تم التخطي {0}, الاستبدال طويل جداً.</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] جاري التخطي {0}, عدم تطابق الطول.</string>
+    <string name="log_patch_stats_header">📈 إحصائيات الإصلاح النهائية:</string>
+    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
+    <string name="log_total_changes">   المجموع: {0} تغييرات</string>
+    <string name="log_file_saved">💾 تم الحفظ: {0}</string>
+    <string name="log_save_error">❌ خطأ الحفظ: {0}</string>
+    
+    <!-- File Statuses -->
+    <string name="status_ready">جاهز</string>
+    <string name="status_cancelled">تم الإلغاء</string>
+    <string name="status_error">خطأ</string>
+    <string name="status_done">تم</string>
+    <string name="status_skipped">تم التخطي</string>
+    <string name="status_no_changes">لا توجد تغييرات</string>
+
+    <!-- Summaries -->
+    <string name="summary_patched">{0} تم إصلاحه</string>
+    <string name="summary_skipped">{0} تم تخطيه</string>
+    <string name="summary_errors">{0} به أخطاء</string>
+    <string name="summary_cancelled_prefix">تم الإلغاء: </string>
+    <string name="summary_finished_prefix">تم: </string>
+    <string name="summary_no_ops">لم يتم تنفيذ أي عمليات</string>
+</resources>

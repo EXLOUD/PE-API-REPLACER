@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_name">हिंदी</string>
+	
+    <!-- Titles & UI -->
+    <string name="app_title">PE API Replacer</string>
+    <string name="version">संस्करण</string>
+    <string name="files">फाइलें</string>
+    <string name="add_files">फाइलें जोड़ें</string>
+    <string name="add_folder">फोल्डर जोड़ें</string>
+    <string name="start_patching">पैचिंग शुरू करें</string>
+    <string name="clear_all">सभी साफ़ करें</string>
+    <string name="files_not_added">कोई फाइल जोड़ी नहीं गई</string>
+    <string name="add_pe_files_hint">शुरुआत के लिए PE फाइलें जोड़ें</string>
+    <string name="settings">सेटिंग्स</string>
+    <string name="logs">लॉग</string>
+    <string name="clear">साफ़ करें</string>
+    <string name="about">के बारे में</string>
+    <string name="api_group_title">API को प्रतिस्थापित करने के लिए</string>
+    <string name="all_apis">सभी API</string>
+    <string name="options_group_title">सहेजने के विकल्प</string>
+    <string name="create_backups">बैकअप बनाएं</string>
+    <string name="overwrite_originals">मूल को अधिलेखित करें</string>
+    <string name="cancel">रद्द करें</string>
+    <string name="cancelling">रद्द किया जा रहा है...</string>
+    <string name="close">बंद करें</string>
+    <string name="author">लेखक</string>
+    <string name="donation_title">💰 दान करें (कॉपी करने के लिए क्लिक करें):</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_select_pe_files">PE फाइलें चुनें</string>
+    <string name="dialog_pe_files_filter">PE फाइलें (*.exe *.dll *.vst3 *.vst *.sys);;सभी फाइलें (*)</string>
+    <string name="dialog_search_option">खोज विकल्प</string>
+    <string name="dialog_search_subfolders">सबफोल्डर में खोजें?</string>
+    <string name="dialog_yes_recursive">हाँ (रिकर्सिवली)</string>
+    <string name="dialog_no_folder_only">नहीं (केवल इस फोल्डर में)</string>
+    <string name="dialog_cancel">रद्द करें</string>
+    <string name="dialog_select_folder">फोल्डर चुनें</string>
+    <string name="dialog_op_in_progress">ऑपरेशन चल रहा है</string>
+    <string name="dialog_cannot_clear">कार्य चलने के दौरान सूची को साफ़ नहीं किया जा सकता।</string>
+    <string name="dialog_list_empty">सूची खाली है</string>
+    <string name="dialog_no_files_to_clear">साफ़ करने के लिए कोई फाइल नहीं।</string>
+    <string name="dialog_confirmation">पुष्टि</string>
+    <string name="dialog_clear_all_q">सूची से सभी फाइलें हटाएं?</string>
+    <string name="dialog_completed_title">पूर्ण</string>
+    <string name="warning_title">चेतावनी</string>
+    <string name="warning_no_files">पैचिंग के लिए कोई फाइल नहीं</string>
+    <string name="warning_no_api">कम से कम एक API चुनें</string>
+    <string name="task_analyzing_files">फाइलों का विश्लेषण</string>
+    <string name="task_patching_files">फाइलों को पैच किया जा रहा है</string>
+    <string name="scan_folder_title">फोल्डर स्कैन किया जा रहा है</string>
+    <string name="scanning_status_searching">खोज रहे हैं...</string>
+    <string name="add_n_files">{0} फाइलें जोड़ें</string>
+    <string name="found_n_files">{0} फाइलें मिलीं</string>
+    <string name="no_pe_files_found">कोई PE फाइल नहीं मिली</string>
+    <string name="skipped_folders_info">ℹ️ छोड़े गए फोल्डर: </string>
+    
+    <!-- Logs -->
+    <string name="log_app_started">{0} v{1} शुरू किया गया</string>
+    <string name="log_scanning_folder">स्कैन किया जा रहा है: {0}{1}</string>
+    <string name="log_with_subfolders"> (सबफोल्डर के साथ)</string>
+    <string name="log_all_files_added">सभी चुनी गई फाइलें पहले से सूची में हैं</string>
+    <string name="log_files_added">{0} फाइलें जोड़ी गईं</string>
+    <string name="log_files_skipped">{0} फाइलें छोड़ी गईं (PE नहीं)</string>
+    <string name="log_list_cleared">फाइल सूची साफ़ की गई</string>
+    <string name="log_cleared">लॉग साफ़ किए गए</string>
+    <string name="log_operation_stopped">ऑपरेशन बंद कर दिया गया।</string>
+    <string name="log_copied">✅ कॉपी किया गया {0}: {1}...</string>
+    <string name="log_cancel_request">रद्दीकरण अनुरोध प्राप्त...</string>
+    <string name="log_patching_cancelled">पैचिंग प्रक्रिया उपयोगकर्ता द्वारा रद्द की गई।</string>
+    <string name="log_processing_file">प्रोसेस किया जा रहा है: {0} {1}</string>
+    <string name="log_read_error">❌ पढ़ने में त्रुटि: {0}</string>
+    <string name="log_nothing_to_patch">⚠️ पैच करने के लिए कुछ नहीं</string>
+    <string name="log_backup_saved">📁 बैकअप सहेजा गया: {0}</string>
+    <string name="log_original_replaced">📄 मूल को प्रतिस्थापित किया गया</string>
+    <string name="log_move_error">❌ फाइल स्थानांतरण त्रुटि: {0}</string>
+    <string name="log_general_error">❌ सामान्य त्रुटि: {0}</string>
+    <string name="log_readonly_file">⚠️ फाइल '{0}' केवल-पढ़ने योग्य है। अनुमतियां बदली जा रही हैं...</string>
+    <string name="log_changing_perms">   अनुमतियां बदलने का प्रयास...</string>
+    <string name="log_perms_changed">✅ अनुमतियां पढ़ने/लिखने में बदली गईं</string>
+    <string name="log_perms_error">❌ अनुमतियां बदलने में त्रुटि: {0}</string>
+    <string name="log_restoring_perms">📄 मूल अनुमतियां बहाल की जा रही हैं...</string>
+    <string name="log_perms_restored">✅ अनुमतियां बहाल की गईं</string>
+    <string name="log_restore_perms_error">❌ अनुमतियां बहाल करने में त्रुटि: {0}</string>
+    <string name="log_load_error">❌ लोडिंग त्रुटि: {0}</string>
+    <string name="log_patch_details_header">📊 पैचिंग से पहले विवरण:</string>
+    <string name="log_patch_details_iat">   [IAT] {0}</string>
+    <string name="log_patch_details_hex">   [HEX] {0}</string>
+    <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] {0} छोड़ा गया, प्रतिस्थापन बहुत लंबा है।</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] {0} छोड़ा जा रहा है, लंबाई मेल नहीं खाती।</string>
+    <string name="log_patch_stats_header">📈 अंतिम पैचिंग आंकड़े:</string>
+    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
+    <string name="log_total_changes">   कुल: {0} परिवर्तन</string>
+    <string name="log_file_saved">💾 सहेजा गया: {0}</string>
+    <string name="log_save_error">❌ सहेजने में त्रुटि: {0}</string>
+    
+    <!-- File Statuses -->
+    <string name="status_ready">तैयार</string>
+    <string name="status_cancelled">रद्द किया गया</string>
+    <string name="status_error">त्रुटि</string>
+    <string name="status_done">पूर्ण</string>
+    <string name="status_skipped">छोड़ा गया</string>
+    <string name="status_no_changes">कोई परिवर्तन नहीं</string>
+
+    <!-- Summaries -->
+    <string name="summary_patched">{0} पैच किया गया</string>
+    <string name="summary_skipped">{0} छोड़ा गया</string>
+    <string name="summary_errors">{0} त्रुटियों के साथ</string>
+    <string name="summary_cancelled_prefix">रद्द किया गया: </string>
+    <string name="summary_finished_prefix">पूर्ण: </string>
+    <string name="summary_no_ops">कोई ऑपरेशन नहीं किया गया</string>
+</resources>

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_name">Polski</string>
+	
+    <!-- Titles & UI -->
+    <string name="app_title">PE API Replacer</string>
+    <string name="version">Wersja</string>
+    <string name="files">pliki</string>
+    <string name="add_files">Dodaj pliki</string>
+    <string name="add_folder">Dodaj folder</string>
+    <string name="start_patching">Rozpocznij patchowanie</string>
+    <string name="clear_all">Wyczyść wszystko</string>
+    <string name="files_not_added">Nie dodano żadnych plików</string>
+    <string name="add_pe_files_hint">Dodaj pliki PE aby rozpocząć</string>
+    <string name="settings">Ustawienia</string>
+    <string name="logs">Dzienniki</string>
+    <string name="clear">Wyczyść</string>
+    <string name="about">O programie</string>
+    <string name="api_group_title">Interfejsy API do zastąpienia</string>
+    <string name="all_apis">Wszystkie API</string>
+    <string name="options_group_title">Opcje zapisywania</string>
+    <string name="create_backups">Utwórz kopie zapasowe</string>
+    <string name="overwrite_originals">Nadpisz oryginały</string>
+    <string name="cancel">Anuluj</string>
+    <string name="cancelling">Anulowanie...</string>
+    <string name="close">Zamknij</string>
+    <string name="author">Autor</string>
+    <string name="donation_title">💰 Wesprzyj (kliknij aby skopiować):</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_select_pe_files">Wybierz pliki PE</string>
+    <string name="dialog_pe_files_filter">Pliki PE (*.exe *.dll *.vst3 *.vst *.sys);;Wszystkie pliki (*)</string>
+    <string name="dialog_search_option">Opcja wyszukiwania</string>
+    <string name="dialog_search_subfolders">Szukać w podfolderach?</string>
+    <string name="dialog_yes_recursive">Tak (rekursywnie)</string>
+    <string name="dialog_no_folder_only">Nie (tylko ten folder)</string>
+    <string name="dialog_cancel">Anuluj</string>
+    <string name="dialog_select_folder">Wybierz folder</string>
+    <string name="dialog_op_in_progress">Operacja w toku</string>
+    <string name="dialog_cannot_clear">Nie można wyczyścić listy podczas wykonywania zadania.</string>
+    <string name="dialog_list_empty">Lista jest pusta</string>
+    <string name="dialog_no_files_to_clear">Brak plików do wyczyszczenia.</string>
+    <string name="dialog_confirmation">Potwierdzenie</string>
+    <string name="dialog_clear_all_q">Usunąć wszystkie pliki z listy?</string>
+    <string name="dialog_completed_title">Ukończono</string>
+    <string name="warning_title">Ostrzeżenie</string>
+    <string name="warning_no_files">Brak plików do patchowania</string>
+    <string name="warning_no_api">Wybierz co najmniej jeden interfejs API</string>
+    <string name="task_analyzing_files">Analiza plików</string>
+    <string name="task_patching_files">Patchowanie plików</string>
+    <string name="scan_folder_title">Skanowanie folderu</string>
+    <string name="scanning_status_searching">Wyszukiwanie...</string>
+    <string name="add_n_files">Dodaj {0} plików</string>
+    <string name="found_n_files">Znaleziono {0} plików</string>
+    <string name="no_pe_files_found">Nie znaleziono plików PE</string>
+    <string name="skipped_folders_info">ℹ️ Pominięte foldery: </string>
+    
+    <!-- Logs -->
+    <string name="log_app_started">Uruchomiono {0} v{1}</string>
+    <string name="log_scanning_folder">Skanowanie: {0}{1}</string>
+    <string name="log_with_subfolders"> (z podfolderami)</string>
+    <string name="log_all_files_added">Wszystkie wybrane pliki znajdują się już na liście</string>
+    <string name="log_files_added">Dodano {0} plików</string>
+    <string name="log_files_skipped">Pominięto {0} plików (nie PE)</string>
+    <string name="log_list_cleared">Lista plików wyczyszczona</string>
+    <string name="log_cleared">Dzienniki wyczyszczone</string>
+    <string name="log_operation_stopped">Operacja została zatrzymana.</string>
+    <string name="log_copied">✅ Skopiowano {0}: {1}...</string>
+    <string name="log_cancel_request">Otrzymano żądanie anulowania...</string>
+    <string name="log_patching_cancelled">Proces patchowania anulowany przez użytkownika.</string>
+    <string name="log_processing_file">Przetwarzanie: {0} {1}</string>
+    <string name="log_read_error">❌ Błąd odczytu: {0}</string>
+    <string name="log_nothing_to_patch">⚠️ Nic do patchowania</string>
+    <string name="log_backup_saved">📁 Kopia zapasowa zapisana: {0}</string>
+    <string name="log_original_replaced">📄 Oryginał zastąpiony</string>
+    <string name="log_move_error">❌ Błąd przenoszenia pliku: {0}</string>
+    <string name="log_general_error">❌ Błąd ogólny: {0}</string>
+    <string name="log_readonly_file">⚠️ Plik '{0}' jest tylko do odczytu. Zmiana uprawnień...</string>
+    <string name="log_changing_perms">   Próba zmiany uprawnień...</string>
+    <string name="log_perms_changed">✅ Uprawnienia zmienione na odczyt/zapis</string>
+    <string name="log_perms_error">❌ Błąd zmiany uprawnień: {0}</string>
+    <string name="log_restoring_perms">📄 Przywracanie oryginalnych uprawnień...</string>
+    <string name="log_perms_restored">✅ Uprawnienia przywrócone</string>
+    <string name="log_restore_perms_error">❌ Błąd przywracania uprawnień: {0}</string>
+    <string name="log_load_error">❌ Błąd ładowania: {0}</string>
+    <string name="log_patch_details_header">📊 Szczegóły przed patchowaniem:</string>
+    <string name="log_patch_details_iat">   [IAT] {0}</string>
+    <string name="log_patch_details_hex">   [HEX] {0}</string>
+    <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] Pominięto {0}, zastępienie jest zbyt długie.</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] Pomijanie {0}, niezgodność długości.</string>
+    <string name="log_patch_stats_header">📈 Końcowe statystyki patchowania:</string>
+    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
+    <string name="log_total_changes">   RAZEM: {0} zmian</string>
+    <string name="log_file_saved">💾 Zapisano: {0}</string>
+    <string name="log_save_error">❌ Błąd zapisywania: {0}</string>
+    
+    <!-- File Statuses -->
+    <string name="status_ready">Gotowy</string>
+    <string name="status_cancelled">Anulowano</string>
+    <string name="status_error">Błąd</string>
+    <string name="status_done">Ukończono</string>
+    <string name="status_skipped">Pominięto</string>
+    <string name="status_no_changes">Brak zmian</string>
+
+    <!-- Summaries -->
+    <string name="summary_patched">{0} spatchowano</string>
+    <string name="summary_skipped">{0} pominięto</string>
+    <string name="summary_errors">{0} z błędami</string>
+    <string name="summary_cancelled_prefix">Anulowano: </string>
+    <string name="summary_finished_prefix">Ukończono: </string>
+    <string name="summary_no_ops">Nie wykonano żadnych operacji</string>
+</resources>
