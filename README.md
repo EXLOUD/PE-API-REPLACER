@@ -377,7 +377,7 @@ For native library contributions, ensure compilation with **llvm-mingw 21.1.3**.
 
 **PE API Replacer Development Team**
 
-- GitHub: [@EXLOUD](https://github.com/EXLOUD)
+- GitHub: [EXLOUD](https://github.com/EXLOUD)
 - Issues & Support: [GitHub Issues](https://github.com/EXLOUD/pe-api-replacer/issues)
 
 ---
