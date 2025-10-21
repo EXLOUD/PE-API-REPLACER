@@ -3,7 +3,7 @@
 ### 👇
 
   <p>
-    <a href="https://github.com/EXLOUD/PE-API-REPLACER/releases/download/v1.0.0/PE-API-REPLACER.zip">
+    <a href="https://github.com/EXLOUD/PE-API-REPLACER/releases/download/v1.0.8/PE-API-REPLACER_v1.0.8.zip">
       <img src="https://img.shields.io/badge/Download_PE_API_Replacer-darkgreen?style=for-the-badge&logo=download&logoColor=white">
     </a>
   </p>
@@ -37,10 +37,10 @@
   
   <img src="assets/preview.png" width="700" alt="PE API Replacer demo preview">
   
-  [![GitHub issues](https://img.shields.io/github/issues/yourusername/pe-api-replacer?style=flat-square)](https://github.com/yourusername/pe-api-replacer/issues)
+  [![GitHub issues](https://img.shields.io/github/issues/EXLOUD/pe-api-replacer?style=flat-square)](https://github.com/EXLOUD/pe-api-replacer/issues)
   ![Windows](https://img.shields.io/badge/OS-Windows%2FmacOS%2FLinux-0078D4?style=for-the-badge&logo=windows&logoColor=white)
   ![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)
-  [![GitHub stars](https://img.shields.io/github/stars/yourusername/pe-api-replacer?style=flat-square)](https://github.com/yourusername/pe-api-replacer/stargazers)
+  [![GitHub stars](https://img.shields.io/github/stars/EXLOUD/pe-api-replacer?style=flat-square)](https://github.com/EXLOUD/pe-api-replacer/stargazers)
 
   Professional GUI tool for replacing API imports in PE files. Batch process EXE, DLL, VST, and SYS files with automatic backups and detailed logging.
 
@@ -377,14 +377,14 @@ For native library contributions, ensure compilation with **llvm-mingw 21.1.3**.
 
 **PE API Replacer Development Team**
 
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Issues & Support: [GitHub Issues](https://github.com/yourusername/pe-api-replacer/issues)
+- GitHub: [@yourusername](https://github.com/EXLOUD)
+- Issues & Support: [GitHub Issues](https://github.com/EXLOUD/pe-api-replacer/issues)
 
 ---
 
 <div align="center">
 
-**Version:** 1.0.2  
+**Version:** 1.0.8 
 **Last Updated:** 2025  
 **Status:** ✅ Stable  
 **Built with:** Python 3.10+, PyQt6, C/llvm-mingw 21.1.3
