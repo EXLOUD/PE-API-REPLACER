@@ -1,5 +1,5 @@
 ﻿// ============================================================================
-// === EXMSW.DLL: MSWSOCK Stub Implementation v1.0.4 (Clean) ===
+// === EXMSW.DLL: MSWSOCK Stub Implementation v1.0.1 (Clean) ===
 // === Автор: EXLOUD ===
 // === Призначення: Емуляція функцій mswsock.dll для офлайн-режиму. ===
 // ============================================================================
@@ -47,7 +47,7 @@ typedef struct _WINSOCK_MAPPING { DWORD Rows; DWORD Columns; } WINSOCK_MAPPING, 
 typedef struct _NS_ROUTINE { DWORD dwFunctionCount; LPVOID* lpfnFunctions; } NS_ROUTINE, *PNS_ROUTINE, *LPNS_ROUTINE;
 
 // === НАЛАГОДЖУВАЛЬНІ КОНСТАНТИ ===
-#define ENABLE_DEBUG_CONSOLE 1
+#define ENABLE_DEBUG_CONSOLE 0
 #define ENABLE_FILE_LOGGING  0
 
 // === ГЛОБАЛЬНІ ЗМІННІ ===
@@ -216,11 +216,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 #if ENABLE_FILE_LOGGING
                 InitializeCriticalSection(&g_LogCS); char p[MAX_PATH]; GetTempPathA(MAX_PATH, p); strcat_s(p, MAX_PATH, "exmsw.log"); fopen_s(&g_LogFile, p, "a");
                 #endif
-                LogMessage("=== EXMSW Stub v1.0.4 Initialized ===");
+                LogMessage("=== EXMSW Stub v1.0.1 Initialized ===");
             } break;
         case DLL_PROCESS_DETACH:
             if (InterlockedDecrement(&g_InitCount) == 0) {
-                LogMessage("=== EXMSW Stub v1.0.4 Unloading ===");
+                LogMessage("=== EXMSW Stub v1.0.1 Unloading ===");
                 if (g_tlsError != TLS_OUT_OF_INDEXES) { TlsFree(g_tlsError); }
                 #if ENABLE_FILE_LOGGING
                 if (g_LogFile) { fclose(g_LogFile); } DeleteCriticalSection(&g_LogCS);
