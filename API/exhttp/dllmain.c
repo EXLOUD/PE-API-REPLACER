@@ -63,9 +63,9 @@ typedef VOID(CALLBACK *WINHTTP_PROXY_CHANGE_CALLBACK)(_In_ ULONGLONG ullFlags, _
 // ============================================================================
 // === НАЛАГОДЖУВАЛЬНІ КОНСТАНТИ ===
 // ============================================================================
-#define ENABLE_DEBUG_CONSOLE    0
+#define ENABLE_DEBUG_CONSOLE    1
 #define ENABLE_FILE_LOGGING     0
-#define ENABLE_MEMORY_TRACKING  0
+#define ENABLE_MEMORY_TRACKING  1
 
 // ============================================================================
 // === СТРУКТУРИ ТА КОНСТАНТИ ДЛЯ ВІДСТЕЖЕННЯ ===
@@ -138,30 +138,78 @@ void GetFlagsString(char* buffer, size_t size, DWORD flags, const char* flag_nam
 // ============================================================================
 HINTERNET WINAPI ex_WinHttpOpen(LPCWSTR pszAgentW, DWORD dwAccessType, LPCWSTR pszProxyW, LPCWSTR pszProxyBypassW, DWORD dwFlags) { char flagsStr[128]; const char* flagNames[] = {"WINHTTP_FLAG_ASYNC", "WINHTTP_FLAG_SECURE_DEFAULTS"}; const DWORD flagValues[] = {WINHTTP_FLAG_ASYNC, WINHTTP_FLAG_SECURE_DEFAULTS}; GetFlagsString(flagsStr, sizeof(flagsStr), dwFlags, flagNames, flagValues, 2); LogInfo("WinHttpOpen(Agent: '%S', AccessType: %lu, Proxy: '%S', Bypass: '%S', Flags: 0x%lX [%s])", pszAgentW ? pszAgentW : L"<null>", dwAccessType, pszProxyW ? pszProxyW : L"<null>", pszProxyBypassW ? pszProxyBypassW : L"<null>", dwFlags, flagsStr); HINTERNET hSession = CreateFakeHandle(MAGIC_SESSION, "SESSION", NULL); LogInfo("  -> Created SESSION handle: %p", hSession); return hSession; }
 BOOL WINAPI ex_WinHttpCloseHandle(HINTERNET hInternet) { LogInfo("WinHttpCloseHandle(hInternet: %p, Type: %s)", hInternet, GetHandleTypeName(hInternet)); if (RemoveObjectFromList(&g_hinternet_list, &g_hinternet_list_lock, hInternet)) { LogInfo("  -> Handle %p closed successfully.", hInternet); return TRUE; } return FALSE; }
-HINTERNET WINAPI ex_WinHttpConnect(HINTERNET hSession, LPCWSTR pswzServerName, INTERNET_PORT nServerPort, DWORD dwReserved) { LogInfo("WinHttpConnect(hSession: %p, Server: '%S', Port: %u)", hSession, pswzServerName, nServerPort); if (!IsValidHandle(hSession)) { return NULL; } HINTERNET hConnect = CreateFakeHandle(MAGIC_CONNECT, "CONNECT", hSession); LogInfo("  -> Created CONNECT handle: %p", hConnect); return hConnect; }
-HINTERNET WINAPI ex_WinHttpOpenRequest(HINTERNET hConnect, LPCWSTR pwszVerb, LPCWSTR pwszObjectName, LPCWSTR pwszVersion, LPCWSTR pwszReferrer, LPCWSTR FAR * ppwszAcceptTypes, DWORD dwFlags) { char flagsStr[256]; const char* flagNames[] = {"WINHTTP_FLAG_SECURE", "WINHTTP_FLAG_BYPASS_PROXY_CACHE", "WINHTTP_FLAG_ESCAPE_DISABLE"}; const DWORD flagValues[] = {WINHTTP_FLAG_SECURE, WINHTTP_FLAG_BYPASS_PROXY_CACHE, WINHTTP_FLAG_ESCAPE_DISABLE}; GetFlagsString(flagsStr, sizeof(flagsStr), dwFlags, flagNames, flagValues, 3); LogInfo("WinHttpOpenRequest(hConnect: %p, Verb: '%S', Object: '%S', Flags: 0x%lX [%s])", hConnect, pwszVerb ? pwszVerb : L"GET", pwszObjectName ? pwszObjectName : L"/", dwFlags, flagsStr); if (!IsValidHandle(hConnect)) { return NULL; } HINTERNET hRequest = CreateFakeHandle(MAGIC_REQUEST, "REQUEST", hConnect); LogInfo("  -> Created REQUEST handle: %p", hRequest); return hRequest; }
+HINTERNET WINAPI ex_WinHttpConnect(HINTERNET hSession, LPCWSTR pswzServerName, INTERNET_PORT nServerPort, DWORD dwReserved) { 
+    LogInfo("===>>> WinHttpConnect CALLED <<<===");
+    LogInfo("WinHttpConnect(hSession: %p, Server: '%S', Port: %u, Reserved: 0x%lX)", 
+            hSession, pswzServerName ? pswzServerName : L"<null>", nServerPort, dwReserved); 
+    
+    if (!IsValidHandle(hSession)) { 
+        LogError("  -> INVALID SESSION HANDLE!");
+        return NULL; 
+    } 
+    
+    HINTERNET hConnect = CreateFakeHandle(MAGIC_CONNECT, "CONNECT", hSession); 
+    LogInfo("  -> Created CONNECT handle: %p", hConnect); 
+    
+    if (!hConnect) {
+        LogError("  -> FAILED to create CONNECT handle!");
+    }
+    
+    return hConnect; 
+}
+
+// Також додайте це для OpenRequest
+HINTERNET WINAPI ex_WinHttpOpenRequest(HINTERNET hConnect, LPCWSTR pwszVerb, LPCWSTR pwszObjectName, LPCWSTR pwszVersion, LPCWSTR pwszReferrer, LPCWSTR FAR * ppwszAcceptTypes, DWORD dwFlags) { 
+    char flagsStr[256]; 
+    const char* flagNames[] = {"WINHTTP_FLAG_SECURE", "WINHTTP_FLAG_BYPASS_PROXY_CACHE", "WINHTTP_FLAG_ESCAPE_DISABLE"}; 
+    const DWORD flagValues[] = {WINHTTP_FLAG_SECURE, WINHTTP_FLAG_BYPASS_PROXY_CACHE, WINHTTP_FLAG_ESCAPE_DISABLE}; 
+    GetFlagsString(flagsStr, sizeof(flagsStr), dwFlags, flagNames, flagValues, 3); 
+    
+    LogInfo("===>>> WinHttpOpenRequest CALLED <<<===");
+    LogInfo("WinHttpOpenRequest(hConnect: %p, Verb: '%S', Object: '%S', Version: '%S', Flags: 0x%lX [%s])", 
+            hConnect, 
+            pwszVerb ? pwszVerb : L"GET", 
+            pwszObjectName ? pwszObjectName : L"/", 
+            pwszVersion ? pwszVersion : L"HTTP/1.1",
+            dwFlags, flagsStr); 
+    
+    if (!IsValidHandle(hConnect)) { 
+        LogError("  -> INVALID CONNECT HANDLE!");
+        return NULL; 
+    } 
+    
+    HINTERNET hRequest = CreateFakeHandle(MAGIC_REQUEST, "REQUEST", hConnect); 
+    LogInfo("  -> Created REQUEST handle: %p", hRequest); 
+    
+    if (!hRequest) {
+        LogError("  -> FAILED to create REQUEST handle!");
+    }
+    
+    return hRequest; 
+}
 
 BOOL WINAPI ex_WinHttpSendRequest(HINTERNET hRequest, LPCWSTR lpszHeaders, DWORD dwHeadersLength, 
                                   LPVOID lpOptional, DWORD dwOptionalLength, DWORD dwTotalLength, 
                                   DWORD_PTR dwContext) { 
-    LogInfo("WinHttpSendRequest(hRequest: %p, HeadersLen: %lu, OptionalLen: %lu, TotalLen: %lu)", 
-            hRequest, dwHeadersLength, dwOptionalLength, dwTotalLength); 
+    LogInfo("===>>> WinHttpSendRequest CALLED <<<===");
+    LogInfo("WinHttpSendRequest(hRequest: %p, HeadersLen: %lu, OptionalLen: %lu, TotalLen: %lu, Context: 0x%p)", 
+            hRequest, dwHeadersLength, dwOptionalLength, dwTotalLength, (void*)dwContext); 
     
     if (!IsValidHandle(hRequest)) {
+        LogError("  -> INVALID REQUEST HANDLE! Returning FALSE.");
         SetLastError(ERROR_INVALID_HANDLE);
         return FALSE; 
     }
     
     if (lpszHeaders && wcslen(lpszHeaders) > 0) {
-        LogInfo("  Headers: %S", lpszHeaders);
+        LogInfo("  -> Headers: %S", lpszHeaders);
     }
     
     if (lpOptional && dwOptionalLength > 0) {
         LogHexBuffer(LOG_LEVEL_INFO, __FUNCTION__, "  Payload", (const BYTE*)lpOptional, dwOptionalLength);
     }
     
-    // ОДРАЗУ помилка — без будь-яких спроб з'єднання
-    LogError("  -> BLOCKING: Network connection is not available. Request rejected immediately."); 
+    LogError("  -> BLOCKING: Network connection is not available. Returning FALSE.");
     SetLastError(ERROR_WINHTTP_CANNOT_CONNECT); 
     return FALSE; 
 }
@@ -241,9 +289,221 @@ DWORD WINAPI ex_SvchostPushServiceGlobals(LPVOID lpGlobals) { STUB_LOG; return 0
 DWORD WINAPI ex_WinHttpAutoProxySvcMain(DWORD dwNumServicesArgs, LPWSTR* lpServiceArgVectors) { STUB_LOG; return 0; }
 DWORD WINAPI ex_WinHttpPacJsWorkerMain(LPVOID p1) { STUB_LOG; return 0; }
 WINHTTP_STATUS_CALLBACK WINAPI ex_WinHttpSetStatusCallback(HINTERNET h, WINHTTP_STATUS_CALLBACK c, DWORD f, DWORD_PTR r) { STUB_LOG; LogInfo("  -> Callback: %p, Flags: 0x%lX", c, f); if(h && !IsValidHandle(h)) return WINHTTP_INVALID_STATUS_CALLBACK; return NULL; }
-BOOL WINAPI ex_WinHttpTimeFromSystemTime(const SYSTEMTIME* s, LPWSTR t) { STUB_LOG; if (!s || !t) { SetLastError(ERROR_INVALID_PARAMETER); return FALSE; } wsprintfW(t, L"Mon, 01 Jan 2000 00:00:00 GMT"); return TRUE; }
-BOOL WINAPI ex_WinHttpTimeToSystemTime(LPCWSTR t, SYSTEMTIME* s) { STUB_LOG; if (!t || !s) { SetLastError(ERROR_INVALID_PARAMETER); return FALSE; } ZeroMemory(s, sizeof(SYSTEMTIME)); s->wYear=2000; s->wMonth=1; s->wDay=1; return TRUE; }
-BOOL WINAPI ex_WinHttpCrackUrl(LPCWSTR u, DWORD l, DWORD f, LPURL_COMPONENTS c) { STUB_LOG; if (!u || !c || c->dwStructSize < sizeof(URL_COMPONENTS)) { SetLastError(ERROR_INVALID_PARAMETER); return FALSE; } ZeroMemory(c, c->dwStructSize); c->dwStructSize = sizeof(URL_COMPONENTS); return TRUE; }
+
+BOOL WINAPI ex_WinHttpTimeFromSystemTime(const SYSTEMTIME* s, LPWSTR t) { 
+    LogDebug("WinHttpTimeFromSystemTime()");
+    
+    if (!s || !t) { 
+        SetLastError(ERROR_INVALID_PARAMETER); 
+        return FALSE; 
+    } 
+    
+    // Конвертуємо SYSTEMTIME у HTTP дату формату RFC 1123
+    // Формат: "Mon, 01 Jan 2000 00:00:00 GMT"
+    
+    const WCHAR* day_names[] = { L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat" };
+    const WCHAR* month_names[] = { L"", L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun", 
+                                   L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec" };
+    
+    if (s->wMonth < 1 || s->wMonth > 12 || s->wDayOfWeek > 6) {
+        LogWarning("  -> Invalid date values");
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    
+    wsprintfW(t, L"%s, %02d %s %04d %02d:%02d:%02d GMT",
+        day_names[s->wDayOfWeek],
+        s->wDay,
+        month_names[s->wMonth],
+        s->wYear,
+        s->wHour,
+        s->wMinute,
+        s->wSecond
+    );
+    
+    LogDebug("  -> Converted: %S", t);
+    return TRUE; 
+}
+
+BOOL WINAPI ex_WinHttpTimeToSystemTime(LPCWSTR t, SYSTEMTIME* s) { 
+    LogDebug("WinHttpTimeToSystemTime(Time: %S)", t);
+    
+    if (!t || !s) { 
+        SetLastError(ERROR_INVALID_PARAMETER); 
+        return FALSE; 
+    } 
+    
+    ZeroMemory(s, sizeof(SYSTEMTIME));
+    
+    // Парсимо HTTP дату формату "Mon, 01 Jan 2000 00:00:00 GMT"
+    // або інші формати RFC 1123, RFC 850, ANSI C's asctime()
+    
+    // Спроба 1: RFC 1123 - "Mon, 01 Jan 2000 00:00:00 GMT"
+    int day, month, year, hour, minute, second;
+    WCHAR month_str[4] = {0};
+    
+    int parsed = swscanf_s(t, L"%*3s, %d %3s %d %d:%d:%d GMT",
+        &day, month_str, (unsigned)_countof(month_str), &year, &hour, &minute, &second);
+    
+    if (parsed == 6) {
+        const WCHAR* month_names[] = { L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun", 
+                                       L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec" };
+        
+        month = 0;
+        for (int i = 0; i < 12; i++) {
+            if (wcscmp(month_str, month_names[i]) == 0) {
+                month = i + 1;
+                break;
+            }
+        }
+        
+        if (month > 0) {
+            s->wYear = year;
+            s->wMonth = month;
+            s->wDay = day;
+            s->wHour = hour;
+            s->wMinute = minute;
+            s->wSecond = second;
+            
+            LogDebug("  -> Parsed: %04d-%02d-%02d %02d:%02d:%02d", 
+                    year, month, day, hour, minute, second);
+            return TRUE;
+        }
+    }
+    
+    // Якщо не вдалось спарсити — беремо поточний час
+    GetLocalTime(s);
+    LogWarning("  -> Failed to parse, using current time");
+    return TRUE;
+}
+
+BOOL WINAPI ex_WinHttpCrackUrl(LPCWSTR u, DWORD l, DWORD f, LPURL_COMPONENTS c) {
+    LogInfo("WinHttpCrackUrl(URL: %S, Length: %lu, Flags: 0x%lX)", u, l, f);
+    
+    if (!u || !c) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        LogError("  -> Invalid parameters");
+        return FALSE;
+    }
+    
+    if (c->dwStructSize < sizeof(URL_COMPONENTS)) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        LogError("  -> Invalid structure size");
+        return FALSE;
+    }
+    
+    // Зберігаємо розмір структури
+    DWORD struct_size = c->dwStructSize;
+    ZeroMemory(c, c->dwStructSize);
+    c->dwStructSize = struct_size;
+    
+    // Проста URL: "http://example.com:8080/path?query"
+    LPCWSTR scheme_end = wcschr(u, L':');
+    if (!scheme_end) {
+        LogWarning("  -> No scheme found");
+        return FALSE;
+    }
+    
+    // === СХЕМА ===
+    DWORD scheme_len = (DWORD)(scheme_end - u);
+    if (c->lpszScheme && c->dwSchemeLength > 0) {
+        DWORD copy_len = (scheme_len < c->dwSchemeLength) ? scheme_len : c->dwSchemeLength - 1;
+        wcsncpy_s(c->lpszScheme, c->dwSchemeLength, u, copy_len);
+        c->dwSchemeLength = copy_len;
+    }
+    
+    // Тип схеми
+    if (wcsncmp(u, L"https", 5) == 0) {
+        c->nScheme = INTERNET_SCHEME_HTTPS;
+    } else if (wcsncmp(u, L"http", 4) == 0) {
+        c->nScheme = INTERNET_SCHEME_HTTP;
+    } else if (wcsncmp(u, L"ftp", 3) == 0) {
+        c->nScheme = INTERNET_SCHEME_FTP;
+    } else {
+        c->nScheme = INTERNET_SCHEME_HTTP; // За замовчуванням HTTP
+    }
+    
+    LogInfo("  -> Scheme: %d", c->nScheme);
+    
+    // Пропускаємо "://"
+    LPCWSTR host_start = scheme_end + 1;
+    if (host_start[0] == L'/' && host_start[1] == L'/') {
+        host_start += 2;
+    } else {
+        LogWarning("  -> Invalid URL format");
+        return FALSE;
+    }
+    
+    // === ХОСТ ===
+    LPCWSTR host_end = wcspbrk(host_start, L":/?");
+    if (!host_end) {
+        host_end = u + wcslen(u);
+    }
+    
+    DWORD host_len = (DWORD)(host_end - host_start);
+    if (c->lpszHostName && c->dwHostNameLength > 0) {
+        DWORD copy_len = (host_len < c->dwHostNameLength) ? host_len : c->dwHostNameLength - 1;
+        wcsncpy_s(c->lpszHostName, c->dwHostNameLength, host_start, copy_len);
+        c->dwHostNameLength = copy_len;
+    }
+    
+    LogInfo("  -> Host: %.*S (len: %lu)", host_len, host_start, host_len);
+    
+    // === ПОРТ ===
+    if (host_end[0] == L':') {
+        LPCWSTR port_start = host_end + 1;
+        LPCWSTR port_end = wcspbrk(port_start, L"/?");
+        if (!port_end) {
+            port_end = u + wcslen(u);
+        }
+        c->nPort = (INTERNET_PORT)_wtoi(port_start);
+        host_end = port_end;
+        LogInfo("  -> Port: %u", c->nPort);
+    } else {
+        // За замовчуванням
+        c->nPort = (c->nScheme == INTERNET_SCHEME_HTTPS) ? 443 : 80;
+        LogInfo("  -> Port (default): %u", c->nPort);
+    }
+    
+    // === ШЛЯХ ===
+    if (host_end[0] == L'/') {
+        LPCWSTR path_start = host_end;
+        LPCWSTR path_end = wcschr(path_start, L'?');
+        if (!path_end) {
+            path_end = u + wcslen(u);
+        }
+        
+        DWORD path_len = (DWORD)(path_end - path_start);
+        if (c->lpszUrlPath && c->dwUrlPathLength > 0) {
+            DWORD copy_len = (path_len < c->dwUrlPathLength) ? path_len : c->dwUrlPathLength - 1;
+            wcsncpy_s(c->lpszUrlPath, c->dwUrlPathLength, path_start, copy_len);
+            c->dwUrlPathLength = copy_len;
+        }
+        host_end = path_end;
+        LogInfo("  -> Path: %.*S", path_len, path_start);
+    } else if (c->lpszUrlPath && c->dwUrlPathLength > 1) {
+        wcscpy_s(c->lpszUrlPath, c->dwUrlPathLength, L"/");
+        c->dwUrlPathLength = 1;
+    }
+    
+    // === QUERY STRING ===
+    if (host_end[0] == L'?') {
+        LPCWSTR query_start = host_end;
+        LPCWSTR query_end = u + wcslen(u);
+        DWORD query_len = (DWORD)(query_end - query_start);
+        
+        if (c->lpszExtraInfo && c->dwExtraInfoLength > 0) {
+            DWORD copy_len = (query_len < c->dwExtraInfoLength) ? query_len : c->dwExtraInfoLength - 1;
+            wcsncpy_s(c->lpszExtraInfo, c->dwExtraInfoLength, query_start, copy_len);
+            c->dwExtraInfoLength = copy_len;
+        }
+        LogInfo("  -> Query: %.*S", query_len, query_start);
+    }
+    
+    LogInfo("  -> URL parsed successfully");
+    return TRUE;
+}
+
 BOOL WINAPI ex_WinHttpCreateUrl(LPURL_COMPONENTS c, DWORD f, LPWSTR u, LPDWORD l) { STUB_LOG; if (!c || !l) { SetLastError(ERROR_INVALID_PARAMETER); return FALSE; } if (!u || *l < 8) { *l = 8; SetLastError(ERROR_INSUFFICIENT_BUFFER); return FALSE; } wcscpy_s(u, *l, L"http://"); *l = 7; return TRUE; }
 BOOL WINAPI ex_WinHttpCheckPlatform(void) { STUB_LOG; return TRUE; }
 BOOL WINAPI ex_WinHttpGetDefaultProxyConfiguration(WINHTTP_PROXY_INFO* p) { STUB_LOG; if (p) { ZeroMemory(p, sizeof(WINHTTP_PROXY_INFO)); p->dwAccessType = WINHTTP_ACCESS_TYPE_NO_PROXY; } return TRUE; }
@@ -359,7 +619,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         if (AllocConsole()) {
             FILE* fDummy;
             freopen_s(&fDummy, "CONOUT$", "w", stdout);
-            SetConsoleTitleA("WinHttp Stub Debug Console v1.0.1");
+            SetConsoleTitleA("WinHttp Stub Debug Console v1.0.2");
         }
 #endif
 #if ENABLE_FILE_LOGGING
@@ -370,10 +630,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             fopen_s(&g_log_file, log_path, "a");
         }
 #endif
-        LogInfo("=== WINHTTP STUB v1.0.1 LOADED ==="); LogInfo("Build: %s %s", __DATE__, __TIME__);
+        LogInfo("=== WINHTTP STUB v1.0.2 LOADED ==="); LogInfo("Build: %s %s", __DATE__, __TIME__);
         break;
     case DLL_PROCESS_DETACH:
-        LogInfo("=== WINHTTP STUB v1.0.1 UNLOADING ===");
+        LogInfo("=== WINHTTP STUB v1.0.2 UNLOADING ===");
         if (g_locks_initialized) {
             CleanupObjectList(&g_hinternet_list, &g_hinternet_list_lock, "HINTERNET Handles");
 #if ENABLE_MEMORY_TRACKING
