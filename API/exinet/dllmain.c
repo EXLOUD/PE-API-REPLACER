@@ -567,15 +567,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         InitializeCriticalSection(&g_hinternet_list_lock);
         g_locks_initialized = TRUE;
 #if ENABLE_DEBUG_CONSOLE
-        if (AllocConsole()) { FILE* f; freopen_s(&f, "CONOUT$", "w", stdout); SetConsoleTitleA("WinINet Stub Debug Console v1.0.3"); }
+        if (AllocConsole()) { FILE* f; freopen_s(&f, "CONOUT$", "w", stdout); SetConsoleTitleA("WinINet Stub Debug Console v1.0.2"); }
 #endif
 #if ENABLE_FILE_LOGGING
         { char p[MAX_PATH]; GetModuleFileNameA(NULL, p, MAX_PATH); char* s=strrchr(p, '\\'); if(s)*(s+1)='\0'; strcat_s(p, "wininet_stub.log"); fopen_s(&g_log_file, p, "a"); }
 #endif
-        LogInfo("=== WININET STUB v1.0.3 LOADED ==="); LogInfo("Build: %s %s", __DATE__, __TIME__);
+        LogInfo("=== WININET STUB v1.0.2 LOADED ==="); LogInfo("Build: %s %s", __DATE__, __TIME__);
         break;
     case DLL_PROCESS_DETACH:
-        LogInfo("=== WININET STUB v1.0.3 UNLOADING ===");
+        LogInfo("=== WININET STUB v1.0.2 UNLOADING ===");
         if (g_locks_initialized) {
             CleanupObjectList(&g_hinternet_list, &g_hinternet_list_lock, "HINTERNET Handles");
 #if ENABLE_MEMORY_TRACKING
@@ -601,4 +601,5 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 #ifdef __cplusplus
 }
+
 #endif
