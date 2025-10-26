@@ -1,42 +1,45 @@
 LIBRARY WSOCK32
 EXPORTS
     ; ============================================================================
-    ; === Секція 1: Реалізації функцій MSWSOCK.dll (локальні заглушки)
-    ; === Ординали точно відповідають системному дампу WSOCK32.DLL
+    ; === Повна імітація таблиці експорту системної WSOCK32.DLL
+    ; === з перенаправленням на exws2.dll та EXMSW.dll
     ; ============================================================================
-    AcceptEx                            = ex_AcceptEx                         @1141
-    EnumProtocolsA                      = ex_EnumProtocolsA                   @1111
-    EnumProtocolsW                      = ex_EnumProtocolsW                   @1112
-    GetAcceptExSockaddrs                = ex_GetAcceptExSockaddrs             @1142
-    GetAddressByNameA                   = ex_GetAddressByNameA                @1109
-    GetAddressByNameW                   = ex_GetAddressByNameW                @1110
-    GetNameByTypeA                      = ex_GetNameByTypeA                   @1115
-    GetNameByTypeW                      = ex_GetNameByTypeW                   @1116
-    GetServiceA                         = ex_GetServiceA                      @1119
-    GetServiceW                         = ex_GetServiceW                      @1120
-    GetTypeByNameA                      = ex_GetTypeByNameA                   @1113
-    GetTypeByNameW                      = ex_GetTypeByNameW                   @1114
-    MigrateWinsockConfiguration         = ex_MigrateWinsockConfiguration      @24
-    NPLoadNameSpaces                    = ex_NPLoadNameSpaces                 @1130
-    SetServiceA                         = ex_SetServiceA                      @1117
-    SetServiceW                         = ex_SetServiceW                      @1118
-    TransmitFile                        = ex_TransmitFile                     @1140
-    WSARecvEx                           = ex_WSARecvEx                        @1107
-    dn_expand                           = ex_dn_expand                        @1106
-    getnetbyname                        = ex_getnetbyname                     @1101
-    inet_network                        = ex_inet_network                     @1100
-    rcmd                                = ex_rcmd                             @1102
-    rexec                               = ex_rexec                            @1103
-    rresvport                           = ex_rresvport                        @1104
-    s_perror                            = ex_s_perror                         @1108
-    sethostname                         = ex_sethostname                      @1105
-    ; У системній wsock32.dll ці функції реалізовані всередині, а не перенаправляються.
-    ; Оскільки у нас їх реалізації немає, ми їх перенаправляємо на exws2.dll
-    ; Ординали зберігаємо, як у системному дампі.
 
-    ; ============================================================================
-    ; === Секція 2: Перенаправлення функцій на exws2.dll
-    ; ============================================================================
+    ; --- Секція 1: Перенаправлення на нашу емуляцію MSWSOCK (EXMSW.dll) ---
+    AcceptEx                            = EXMSW.AcceptEx                      @1141
+    EnumProtocolsA                      = EXMSW.EnumProtocolsA                @1111
+    EnumProtocolsW                      = EXMSW.EnumProtocolsW                @1112
+    GetAcceptExSockaddrs                = EXMSW.GetAcceptExSockaddrs          @1142
+    GetAddressByNameA                   = EXMSW.GetAddressByNameA             @1109
+    GetAddressByNameW                   = EXMSW.GetAddressByNameW             @1110
+    GetNameByTypeA                      = EXMSW.GetNameByTypeA                @1115
+    GetNameByTypeW                      = EXMSW.GetNameByTypeW                @1116
+    GetServiceA                         = EXMSW.GetServiceA                   @1119
+    GetServiceW                         = EXMSW.GetServiceW                   @1120
+    GetTypeByNameA                      = EXMSW.GetTypeByNameA                @1113
+    GetTypeByNameW                      = EXMSW.GetTypeByNameW                @1114
+    MigrateWinsockConfiguration         = EXMSW.MigrateWinsockConfiguration   @24
+    NPLoadNameSpaces                    = EXMSW.NPLoadNameSpaces              @1130
+    SetServiceA                         = EXMSW.SetServiceA                   @1117
+    SetServiceW                         = EXMSW.SetServiceW                   @1118
+    TransmitFile                        = EXMSW.TransmitFile                  @1140
+    WSARecvEx                           = EXMSW.WSARecvEx                     @1107
+    dn_expand                           = EXMSW.dn_expand                     @1106
+    getnetbyname                        = EXMSW.getnetbyname                  @1101
+    inet_network                        = EXMSW.inet_network                  @1100
+    rcmd                                = EXMSW.rcmd                          @1102
+    rexec                               = EXMSW.rexec                         @1103
+    rresvport                           = EXMSW.rresvport                     @1104
+    s_perror                            = EXMSW.s_perror                      @1108
+    sethostname                         = EXMSW.sethostname                   @1105
+    ; Функції, що в оригіналі реалізовані всередині wsock32.dll,
+    ; тепер також перенаправляються на EXMSW.dll, де знаходиться їхня логіка.
+    getsockopt                          = EXMSW.getsockopt                    @7
+    recv                                = EXMSW.recv                          @16
+    recvfrom                            = EXMSW.recvfrom                      @17
+    setsockopt                          = EXMSW.setsockopt                    @21
+
+    ; --- Секція 2: Перенаправлення на exws2.dll (стандартні функції Winsock) ---
     WEP                                 = exws2.WEP                           @500
     WSAAsyncGetHostByAddr               = exws2.WSAAsyncGetHostByAddr         @102
     WSAAsyncGetHostByName               = exws2.WSAAsyncGetHostByName         @103
@@ -69,7 +72,6 @@ EXPORTS
     getservbyname                       = exws2.getservbyname                 @55
     getservbyport                       = exws2.getservbyport                 @56
     getsockname                         = exws2.getsockname                   @6
-    getsockopt                          = exws2.getsockopt                    @7
     htonl                               = exws2.htonl                         @8
     htons                               = exws2.htons                         @9
     inet_addr                           = exws2.inet_addr                     @10
@@ -78,11 +80,8 @@ EXPORTS
     listen                              = exws2.listen                        @13
     ntohl                               = exws2.ntohl                         @14
     ntohs                               = exws2.ntohs                         @15
-    recv                                = exws2.recv                          @16
-    recvfrom                            = exws2.recvfrom                      @17
     select                              = exws2.select                        @18
     send                                = exws2.send                          @19
     sendto                              = exws2.sendto                        @20
-    setsockopt                          = exws2.setsockopt                    @21
     shutdown                            = exws2.shutdown                      @22
     socket                              = exws2.socket                        @23
