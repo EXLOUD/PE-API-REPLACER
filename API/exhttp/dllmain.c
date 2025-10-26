@@ -63,9 +63,9 @@ typedef VOID(CALLBACK *WINHTTP_PROXY_CHANGE_CALLBACK)(_In_ ULONGLONG ullFlags, _
 // ============================================================================
 // === НАЛАГОДЖУВАЛЬНІ КОНСТАНТИ ===
 // ============================================================================
-#define ENABLE_DEBUG_CONSOLE    1
+#define ENABLE_DEBUG_CONSOLE    0
 #define ENABLE_FILE_LOGGING     0
-#define ENABLE_MEMORY_TRACKING  1
+#define ENABLE_MEMORY_TRACKING  0
 
 // ============================================================================
 // === СТРУКТУРИ ТА КОНСТАНТИ ДЛЯ ВІДСТЕЖЕННЯ ===
