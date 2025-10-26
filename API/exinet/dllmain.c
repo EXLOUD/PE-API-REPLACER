@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,11 +49,11 @@ typedef struct { PWSTR pwszName; PWSTR pwszValue; PWSTR pwszDomain; PWSTR pwszPa
 #define MAGIC_REQUEST       0xFEEDFACE
 #define MAGIC_FIND_HANDLE   0xDEADF11E
 
-#define HTTP_QUERY_STATUS_CODE        19   // HTTP статус-код як число
-#define HTTP_QUERY_STATUS_TEXT        20   // HTTP статус-текст
-#define HTTP_QUERY_MODIFIER_MASK      0x0000FFFF  // ← КЛЮЧЕВА КОНСТАНТА
+#define HTTP_QUERY_STATUS_CODE        19
+#define HTTP_QUERY_STATUS_TEXT        20
+#define HTTP_QUERY_MODIFIER_MASK      0x0000FFFF
 
-typedef struct _FAKE_HANDLE { DWORD magic; char type_name[24]; struct _FAKE_HANDLE* parent; } FAKE_HANDLE;
+typedef struct _FAKE_HANDLE { DWORD magic; char type_name[24]; struct _FAKE_HANDLE* parent; DWORD read_attempts; } FAKE_HANDLE;
 typedef struct _MEMORY_BLOCK { void* ptr; size_t size; char function[64]; DWORD thread_id; struct _MEMORY_BLOCK* next; } MEMORY_BLOCK;
 typedef struct _OBJECT_NODE { void* object; DWORD thread_id; struct _OBJECT_NODE* next; } OBJECT_NODE;
 typedef enum { LOG_LEVEL_ERROR = 0, LOG_LEVEL_WARNING, LOG_LEVEL_INFO, LOG_LEVEL_DEBUG } LogLevel;
@@ -75,11 +76,11 @@ static OBJECT_NODE* g_hinternet_list = NULL; static CRITICAL_SECTION g_hinternet
 void GetTimestamp(char* buffer, size_t bufferSize) { if (!buffer || bufferSize < 20) return; SYSTEMTIME st; GetLocalTime(&st); snprintf(buffer, bufferSize, "[%02d:%02d:%02d.%03d]", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds); }
 const char* GetLogLevelString(LogLevel level) { switch (level) { case LOG_LEVEL_ERROR: return "ERROR"; case LOG_LEVEL_WARNING: return "WARN "; case LOG_LEVEL_INFO: return "INFO "; case LOG_LEVEL_DEBUG: return "DEBUG"; default: return "?????"; } }
 void LogMessageEx(LogLevel level, const char* function, const char* format, ...) { if (level > g_current_log_level) return; char timestamp[20] = { 0 }; GetTimestamp(timestamp, sizeof(timestamp)); va_list args; va_start(args, format);
-#if ENABLE_FILE_LOGGING
-if (g_log_file && g_locks_initialized) { EnterCriticalSection(&g_log_lock); fprintf(g_log_file, "%s [%s] [%s] ", timestamp, GetLogLevelString(level), function); vfprintf(g_log_file, format, args); fprintf(g_log_file, "\n"); fflush(g_log_file); LeaveCriticalSection(&g_log_lock); }
-#endif
 #if ENABLE_DEBUG_CONSOLE
 printf("[WININET] %s [%s] [%s] ", timestamp, GetLogLevelString(level), function); vprintf(format, args); printf("\n");
+#endif
+#if ENABLE_FILE_LOGGING
+if (g_log_file && g_locks_initialized) { EnterCriticalSection(&g_log_lock); fprintf(g_log_file, "%s [%s] [%s] ", timestamp, GetLogLevelString(level), function); vfprintf(g_log_file, format, args); fprintf(g_log_file, "\n"); fflush(g_log_file); LeaveCriticalSection(&g_log_lock); }
 #endif
 va_end(args); }
 #define LogError(fmt, ...)   LogMessageEx(LOG_LEVEL_ERROR, __FUNCTION__, fmt, ##__VA_ARGS__)
@@ -100,7 +101,7 @@ void ReportMemoryLeaks() { if (!g_locks_initialized) return; EnterCriticalSectio
 void* AddObjectToList(OBJECT_NODE** list_head, CRITICAL_SECTION* lock, void* object_data) { if (!object_data) return NULL; OBJECT_NODE* new_node = (OBJECT_NODE*)SAFE_ALLOC(sizeof(OBJECT_NODE)); if (!new_node) { LogError("Failed to allocate object node"); return NULL; } new_node->object = object_data; new_node->thread_id = GetCurrentThreadId(); EnterCriticalSection(lock); new_node->next = *list_head; *list_head = new_node; LeaveCriticalSection(lock); return object_data; }
 BOOL FindObjectInList(OBJECT_NODE* list_head, CRITICAL_SECTION* lock, void* object_to_find) { if (!object_to_find) return FALSE; BOOL found = FALSE; EnterCriticalSection(lock); OBJECT_NODE* current = list_head; while (current) { if (current->object == object_to_find) { found = TRUE; break; } current = current->next; } LeaveCriticalSection(lock); if (!found) { LogWarning("Attempt to use invalid or freed handle: %p", object_to_find); } return found; }
 BOOL RemoveObjectFromList(OBJECT_NODE** list_head, CRITICAL_SECTION* lock, void* object_to_remove) { if (!object_to_remove) return FALSE; BOOL found = FALSE; EnterCriticalSection(lock); OBJECT_NODE** current_ptr = list_head; while (*current_ptr) { if ((*current_ptr)->object == object_to_remove) { OBJECT_NODE* node_to_delete = *current_ptr; *current_ptr = node_to_delete->next; SAFE_FREE(node_to_delete->object); SAFE_FREE(node_to_delete); found = TRUE; break; } current_ptr = &(*current_ptr)->next; } LeaveCriticalSection(lock); if (!found) { LogWarning("Attempt to remove non-existent handle: %p", object_to_remove); } return found; }
-void CleanupObjectList(OBJECT_NODE** list_head, CRITICAL_SECTION* lock, const char* list_name) { EnterCriticalSection(lock); OBJECT_NODE* current = *list_head; int count = 0; while (current) { OBJECT_NODE* next = current->next; LogWarning("Force-cleaning leaked object from '%s': %p (Thread: %lu)", list_name, current->object, current->thread_id); SAFE_FREE(current->object); SAFE_FREE(current); current = next; count++; } *list_head = NULL; LeaveCriticalSection(lock); }
+void CleanupObjectList(OBJECT_NODE** list_head, CRITICAL_SECTION* lock, const char* list_name) { EnterCriticalSection(lock); OBJECT_NODE* current = *list_head; while (current) { OBJECT_NODE* next = current->next; LogWarning("Force-cleaning leaked object from '%s': %p (Thread: %lu)", list_name, current->object, current->thread_id); SAFE_FREE(current->object); SAFE_FREE(current); current = next; } *list_head = NULL; LeaveCriticalSection(lock); }
 static HINTERNET CreateFakeHandle(DWORD magic, const char* type_name, HINTERNET hParent) { FAKE_HANDLE* handle = (FAKE_HANDLE*)SAFE_ALLOC(sizeof(FAKE_HANDLE)); if (handle) { handle->magic = magic; strncpy_s(handle->type_name, sizeof(handle->type_name), type_name, _TRUNCATE); handle->parent = (FAKE_HANDLE*)hParent; if (AddObjectToList(&g_hinternet_list, &g_hinternet_list_lock, handle)) return (HINTERNET)handle; SAFE_FREE(handle); } LogError("Failed to create fake handle of type '%s'", type_name); SetLastError(ERROR_NOT_ENOUGH_MEMORY); return NULL; }
 static BOOL IsValidHandle(HINTERNET hInternet) { if (!hInternet) { SetLastError(ERROR_INVALID_HANDLE); return FALSE; } if (!FindObjectInList(g_hinternet_list, &g_hinternet_list_lock, hInternet)) { SetLastError(ERROR_INVALID_HANDLE); return FALSE; } return TRUE; }
 
@@ -110,58 +111,161 @@ static BOOL IsValidHandle(HINTERNET hInternet) { if (!hInternet) { SetLastError(
 #define STUB_FAIL_PTR(err) do { STUB_LOG; SetLastError(err); return NULL; } while (0)
 #define STUB_FAIL_DWORD(val, err) do { STUB_LOG; SetLastError(err); return (val); } while (0)
 
-// ============================================================================
-// === ІМПЛЕМЕНТАЦІЯ ЗАГЛУШОК API v1.0 (В ПРАВИЛЬНОМУ ПОРЯДКУ) ===
-// ============================================================================
-
-// --- Основні функції ---
-BOOL WINAPI ex_InternetGetConnectedState(LPDWORD lpdwFlags, DWORD dwReserved) { LogInfo("InternetGetConnectedState called."); if (lpdwFlags) { *lpdwFlags = INTERNET_CONNECTION_OFFLINE; LogInfo("  -> Setting flags to INTERNET_CONNECTION_OFFLINE (0x%lX)", INTERNET_CONNECTION_OFFLINE); } SetLastError(ERROR_INTERNET_DISCONNECTED); LogWarning("  -> Returning FALSE (emulating OFFLINE state)."); return FALSE; }
-BOOL WINAPI ex_InternetCheckConnectionA(LPCSTR lpszUrl, DWORD dwFlags, DWORD dwReserved) { LogInfo("InternetCheckConnectionA(URL: %s)", lpszUrl ? lpszUrl : "<null>"); SetLastError(ERROR_INTERNET_CANNOT_CONNECT); LogWarning("  -> Returning FALSE (emulating CANNOT CONNECT state)."); return FALSE; }
-BOOL WINAPI ex_InternetCheckConnectionW(LPCWSTR lpszUrl, DWORD dwFlags, DWORD dwReserved) { LogInfo("InternetCheckConnectionW(URL: %S)", lpszUrl ? lpszUrl : L"<null>"); SetLastError(ERROR_INTERNET_CANNOT_CONNECT); LogWarning("  -> Returning FALSE (emulating CANNOT CONNECT state)."); return FALSE; }
-HINTERNET WINAPI ex_InternetOpenA(LPCSTR sAgent, DWORD dwAccessType, LPCSTR sProxy, LPCSTR sProxyBypass, DWORD dwFlags) { LogInfo("InternetOpenA(Agent: '%s', Flags: 0x%lX)", sAgent ? sAgent : "<null>", dwFlags); HINTERNET hSession = CreateFakeHandle(MAGIC_SESSION, "SESSION", NULL); LogInfo("  -> Created SESSION handle: %p", hSession); return hSession; }
-HINTERNET WINAPI ex_InternetOpenW(LPCWSTR sAgent, DWORD dwAccessType, LPCWSTR sProxy, LPCWSTR sProxyBypass, DWORD dwFlags) { LogInfo("InternetOpenW(Agent: '%S', Flags: 0x%lX)", sAgent ? sAgent : L"<null>", dwFlags); HINTERNET hSession = CreateFakeHandle(MAGIC_SESSION, "SESSION", NULL); LogInfo("  -> Created SESSION handle: %p", hSession); return hSession; }
-HINTERNET WINAPI ex_InternetConnectA(HINTERNET hInternet, LPCSTR sServerName, INTERNET_PORT nPort, LPCSTR sUsername, LPCSTR sPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) { LogInfo("InternetConnectA(hSession: %p, Server: '%s', Port: %u)", hInternet, sServerName, nPort); if (!IsValidHandle(hInternet)) return NULL; HINTERNET hConnect = CreateFakeHandle(MAGIC_CONNECT, "CONNECT", hInternet); LogInfo("  -> Created CONNECT handle: %p", hConnect); return hConnect; }
-HINTERNET WINAPI ex_InternetConnectW(HINTERNET hInternet, LPCWSTR sServerName, INTERNET_PORT nPort, LPCWSTR sUsername, LPCWSTR sPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) { LogInfo("InternetConnectW(hSession: %p, Server: '%S', Port: %u)", hInternet, sServerName, nPort); if (!IsValidHandle(hInternet)) return NULL; HINTERNET hConnect = CreateFakeHandle(MAGIC_CONNECT, "CONNECT", hInternet); LogInfo("  -> Created CONNECT handle: %p", hConnect); return hConnect; }
-HINTERNET WINAPI ex_InternetOpenUrlA(HINTERNET hInternet, LPCSTR lpszUrl, LPCSTR lpszHeaders, DWORD dwHeadersLength, DWORD dwFlags, DWORD_PTR dwContext) { LogInfo("InternetOpenUrlA(hSession: %p, URL: '%s')", hInternet, lpszUrl); if (!IsValidHandle(hInternet)) return NULL; HINTERNET hRequest = CreateFakeHandle(MAGIC_REQUEST, "URL_REQUEST", hInternet); LogInfo("  -> Created URL_REQUEST handle: %p", hRequest); return hRequest; }
-HINTERNET WINAPI ex_InternetOpenUrlW(HINTERNET hInternet, LPCWSTR lpszUrl, LPCWSTR lpszHeaders, DWORD dwHeadersLength, DWORD dwFlags, DWORD_PTR dwContext) { LogInfo("InternetOpenUrlW(hSession: %p, URL: '%S')", hInternet, lpszUrl); if (!IsValidHandle(hInternet)) return NULL; HINTERNET hRequest = CreateFakeHandle(MAGIC_REQUEST, "URL_REQUEST", hInternet); LogInfo("  -> Created URL_REQUEST handle: %p", hRequest); return hRequest; }
-HINTERNET WINAPI ex_HttpOpenRequestA(HINTERNET hConnect, LPCSTR lpszVerb, LPCSTR lpszObjectName, LPCSTR lpszVersion, LPCSTR lpszReferrer, LPCSTR *lplpszAcceptTypes, DWORD dwFlags, DWORD_PTR dwContext) { LogInfo("HttpOpenRequestA(hConnect: %p, Verb: '%s', Object: '%s')", hConnect, lpszVerb, lpszObjectName); if (!IsValidHandle(hConnect)) return NULL; HINTERNET hRequest = CreateFakeHandle(MAGIC_REQUEST, "HTTP_REQUEST", hConnect); LogInfo("  -> Created HTTP_REQUEST handle: %p", hRequest); return hRequest; }
-HINTERNET WINAPI ex_HttpOpenRequestW(HINTERNET hConnect, LPCWSTR lpszVerb, LPCWSTR lpszObjectName, LPCWSTR lpszVersion, LPCWSTR lpszReferrer, LPCWSTR *lplpszAcceptTypes, DWORD dwFlags, DWORD_PTR dwContext) { LogInfo("HttpOpenRequestW(hConnect: %p, Verb: '%S', Object: '%S')", hConnect, lpszVerb, lpszObjectName); if (!IsValidHandle(hConnect)) return NULL; HINTERNET hRequest = CreateFakeHandle(MAGIC_REQUEST, "HTTP_REQUEST", hConnect); LogInfo("  -> Created HTTP_REQUEST handle: %p", hRequest); return hRequest; }
-
-BOOL WINAPI ex_HttpSendRequestA(HINTERNET hRequest, LPCSTR lpszHeaders, DWORD dwHeadersLength, 
-                                LPVOID lpOptional, DWORD dwOptionalLength) { 
-    LogInfo("HttpSendRequestA(hRequest: %p)", hRequest); 
-    if (!IsValidHandle(hRequest)) return FALSE; 
-    
-    LogError("  -> Network is not available. Cannot send request."); 
-    SetLastError(ERROR_INTERNET_CANNOT_CONNECT); 
-    return FALSE; 
+// === НОВА, ПОКРАЩЕНА РЕАЛІЗАЦІЯ INTERNET_CRACK_URL ===
+static void CopyUrlComponent(LPWSTR pDest, DWORD* dwDestLen, LPCWSTR pSrc, DWORD dwSrcLen) {
+    if (!pSrc || dwSrcLen == 0) { if (pDest) pDest[0] = L'\0'; *dwDestLen = 0; return; }
+    if (pDest && *dwDestLen > 0) {
+        DWORD lenToCopy = (dwSrcLen < *dwDestLen) ? dwSrcLen : (*dwDestLen - 1);
+        wcsncpy_s(pDest, *dwDestLen, pSrc, lenToCopy);
+        pDest[lenToCopy] = L'\0';
+    }
+    *dwDestLen = dwSrcLen;
 }
 
-BOOL WINAPI ex_HttpSendRequestW(HINTERNET hRequest, LPCWSTR lpszHeaders, DWORD dwHeadersLength, 
-                                LPVOID lpOptional, DWORD dwOptionalLength) { 
-    LogInfo("HttpSendRequestW(hRequest: %p)", hRequest); 
-    if (!IsValidHandle(hRequest)) return FALSE; 
+BOOL WINAPI ex_InternetCrackUrlW(LPCWSTR lpszUrl, DWORD dwUrlLength, DWORD dwFlags, LPURL_COMPONENTSW lpComponents) {
+    LogInfo("InternetCrackUrlW(URL: %S)", lpszUrl ? lpszUrl : L"<null>");
+    if (!lpszUrl || !lpComponents || lpComponents->dwStructSize != sizeof(URL_COMPONENTSW)) {
+        SetLastError(ERROR_INVALID_PARAMETER); return FALSE;
+    }
+    LPCWSTR pEnd = lpszUrl + (dwUrlLength == 0 ? wcslen(lpszUrl) : dwUrlLength);
+    LPCWSTR pCurrent = lpszUrl;
+    LPCWSTR pSchemeEnd = wcsstr(pCurrent, L"://");
+    if (pSchemeEnd && pSchemeEnd < pEnd) {
+        CopyUrlComponent(lpComponents->lpszScheme, &lpComponents->dwSchemeLength, pCurrent, (DWORD)(pSchemeEnd - pCurrent));
+        if (_wcsnicmp(pCurrent, L"https", 5) == 0) lpComponents->nScheme = INTERNET_SCHEME_HTTPS;
+        else if (_wcsnicmp(pCurrent, L"http", 4) == 0) lpComponents->nScheme = INTERNET_SCHEME_HTTP;
+        else if (_wcsnicmp(pCurrent, L"ftp", 3) == 0) lpComponents->nScheme = INTERNET_SCHEME_FTP;
+        else lpComponents->nScheme = INTERNET_SCHEME_UNKNOWN;
+        pCurrent = pSchemeEnd + 3;
+    } else { lpComponents->dwSchemeLength = 0; lpComponents->nScheme = INTERNET_SCHEME_UNKNOWN; }
     
-    LogError("  -> Network is not available. Cannot send request."); 
-    SetLastError(ERROR_INTERNET_CANNOT_CONNECT); 
-    return FALSE; 
+    LPCWSTR pPathStart = wcschr(pCurrent, L'/');
+    if (!pPathStart || pPathStart > pEnd) pPathStart = pEnd;
+    LPCWSTR pAuthEnd = wcschr(pCurrent, L'@');
+    if (pAuthEnd && pAuthEnd < pPathStart) {
+        LPCWSTR pPassEnd = wcschr(pCurrent, L':');
+        if (pPassEnd && pPassEnd < pAuthEnd) {
+            CopyUrlComponent(lpComponents->lpszUserName, &lpComponents->dwUserNameLength, pCurrent, (DWORD)(pPassEnd - pCurrent));
+            CopyUrlComponent(lpComponents->lpszPassword, &lpComponents->dwPasswordLength, pPassEnd + 1, (DWORD)(pAuthEnd - (pPassEnd + 1)));
+        } else { CopyUrlComponent(lpComponents->lpszUserName, &lpComponents->dwUserNameLength, pCurrent, (DWORD)(pAuthEnd - pCurrent)); }
+        pCurrent = pAuthEnd + 1;
+    }
+
+    LPCWSTR pHostEnd = pPathStart;
+    LPCWSTR pPortStart = wcschr(pCurrent, L':');
+    if (pPortStart && pPortStart < pHostEnd) {
+        CopyUrlComponent(lpComponents->lpszHostName, &lpComponents->dwHostNameLength, pCurrent, (DWORD)(pPortStart - pCurrent));
+        WCHAR portBuf[10] = {0}; wcsncpy_s(portBuf, 10, pPortStart + 1, (size_t)(pHostEnd - (pPortStart + 1)));
+        lpComponents->nPort = (INTERNET_PORT)_wtoi(portBuf);
+    } else {
+        CopyUrlComponent(lpComponents->lpszHostName, &lpComponents->dwHostNameLength, pCurrent, (DWORD)(pHostEnd - pCurrent));
+        if (lpComponents->nScheme == INTERNET_SCHEME_HTTPS) lpComponents->nPort = 443;
+        else if (lpComponents->nScheme == INTERNET_SCHEME_HTTP) lpComponents->nPort = 80;
+        else if (lpComponents->nScheme == INTERNET_SCHEME_FTP) lpComponents->nPort = 21;
+        else lpComponents->nPort = 0;
+    }
+    pCurrent = pHostEnd;
+
+    if (pCurrent < pEnd) {
+        LPCWSTR pQueryStart = wcschr(pCurrent, L'?');
+        if (!pQueryStart || pQueryStart > pEnd) pQueryStart = pEnd;
+        CopyUrlComponent(lpComponents->lpszUrlPath, &lpComponents->dwUrlPathLength, pCurrent, (DWORD)(pQueryStart - pCurrent));
+        CopyUrlComponent(lpComponents->lpszExtraInfo, &lpComponents->dwExtraInfoLength, pQueryStart, (DWORD)(pEnd - pQueryStart));
+    } else { lpComponents->dwUrlPathLength = 0; lpComponents->dwExtraInfoLength = 0; }
+
+    LogDebug("  -> Parsed successfully");
+    return TRUE;
 }
 
-BOOL WINAPI ex_InternetReadFile(HINTERNET hFile, LPVOID lpBuffer, DWORD dwNumberOfBytesToRead, 
-                                LPDWORD lpdwNumberOfBytesRead) { 
-    LogInfo("InternetReadFile(hFile: %p, bufferSize: %lu)", hFile, dwNumberOfBytesToRead); 
-    if (!IsValidHandle(hFile)) return FALSE; 
+BOOL WINAPI ex_InternetCrackUrlA(LPCSTR lpszUrl, DWORD dwUrlLength, DWORD dwFlags, LPURL_COMPONENTSA lpUrlComponents) {
+    LogInfo("InternetCrackUrlA(URL: %s)", lpszUrl ? lpszUrl : "<null>");
+    if (!lpszUrl || !lpUrlComponents) { SetLastError(ERROR_INVALID_PARAMETER); return FALSE; }
     
-    if (lpdwNumberOfBytesRead) *lpdwNumberOfBytesRead = 0; 
+    int url_len_w = MultiByteToWideChar(CP_ACP, 0, lpszUrl, dwUrlLength == 0 ? -1 : (int)dwUrlLength, NULL, 0);
+    WCHAR* url_w = (WCHAR*)SAFE_ALLOC(url_len_w * sizeof(WCHAR));
+    if (!url_w) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return FALSE; }
+    MultiByteToWideChar(CP_ACP, 0, lpszUrl, dwUrlLength == 0 ? -1 : (int)dwUrlLength, url_w, url_len_w);
     
-    LogError("  -> Network connection aborted - cannot read data."); 
-    SetLastError(ERROR_INTERNET_CONNECTION_ABORTED); 
-    return FALSE; 
+    URL_COMPONENTSW comp_w = { sizeof(URL_COMPONENTSW) };
+    WCHAR scheme_w[128], host_w[1024], user_w[256], pass_w[256], path_w[2048], extra_w[2048];
+    comp_w.lpszScheme = scheme_w; comp_w.dwSchemeLength = 128;
+    comp_w.lpszHostName = host_w; comp_w.dwHostNameLength = 1024;
+    comp_w.lpszUserName = user_w; comp_w.dwUserNameLength = 256;
+    comp_w.lpszPassword = pass_w; comp_w.dwPasswordLength = 256;
+    comp_w.lpszUrlPath = path_w; comp_w.dwUrlPathLength = 2048;
+    comp_w.lpszExtraInfo = extra_w; comp_w.dwExtraInfoLength = 2048;
+
+    BOOL result = ex_InternetCrackUrlW(url_w, 0, dwFlags, &comp_w);
+    if (result) {
+        lpUrlComponents->nScheme = comp_w.nScheme; lpUrlComponents->nPort = comp_w.nPort;
+        if (lpUrlComponents->lpszScheme && lpUrlComponents->dwSchemeLength > 0) WideCharToMultiByte(CP_ACP,0,comp_w.lpszScheme,comp_w.dwSchemeLength+1,lpUrlComponents->lpszScheme,lpUrlComponents->dwSchemeLength,0,0);
+        if (lpUrlComponents->lpszHostName && lpUrlComponents->dwHostNameLength > 0) WideCharToMultiByte(CP_ACP,0,comp_w.lpszHostName,comp_w.dwHostNameLength+1,lpUrlComponents->lpszHostName,lpUrlComponents->dwHostNameLength,0,0);
+        if (lpUrlComponents->lpszUserName && lpUrlComponents->dwUserNameLength > 0) WideCharToMultiByte(CP_ACP,0,comp_w.lpszUserName,comp_w.dwUserNameLength+1,lpUrlComponents->lpszUserName,lpUrlComponents->dwUserNameLength,0,0);
+        if (lpUrlComponents->lpszPassword && lpUrlComponents->dwPasswordLength > 0) WideCharToMultiByte(CP_ACP,0,comp_w.lpszPassword,comp_w.dwPasswordLength+1,lpUrlComponents->lpszPassword,lpUrlComponents->dwPasswordLength,0,0);
+        if (lpUrlComponents->lpszUrlPath && lpUrlComponents->dwUrlPathLength > 0) WideCharToMultiByte(CP_ACP,0,comp_w.lpszUrlPath,comp_w.dwUrlPathLength+1,lpUrlComponents->lpszUrlPath,lpUrlComponents->dwUrlPathLength,0,0);
+        if (lpUrlComponents->lpszExtraInfo && lpUrlComponents->dwExtraInfoLength > 0) WideCharToMultiByte(CP_ACP,0,comp_w.lpszExtraInfo,comp_w.dwExtraInfoLength+1,lpUrlComponents->lpszExtraInfo,lpUrlComponents->dwExtraInfoLength,0,0);
+        lpUrlComponents->dwSchemeLength = comp_w.dwSchemeLength; lpUrlComponents->dwHostNameLength = comp_w.dwHostNameLength; lpUrlComponents->dwUserNameLength = comp_w.dwUserNameLength;
+        lpUrlComponents->dwPasswordLength = comp_w.dwPasswordLength; lpUrlComponents->dwUrlPathLength = comp_w.dwUrlPathLength; lpUrlComponents->dwExtraInfoLength = comp_w.dwExtraInfoLength;
+    }
+    SAFE_FREE(url_w);
+    return result;
 }
 
-BOOL WINAPI ex_InternetCloseHandle(HINTERNET hInternet) { LogInfo("InternetCloseHandle(hInternet: %p)", hInternet); if (!IsValidHandle(hInternet)) return FALSE; if (RemoveObjectFromList(&g_hinternet_list, &g_hinternet_list_lock, hInternet)) { LogInfo("  -> Handle %p closed successfully.", hInternet); return TRUE; } return FALSE; }
+// === ІНШІ КЛЮЧОВІ API ===
+BOOL WINAPI ex_InternetGetConnectedState(LPDWORD lpdwFlags, DWORD dwReserved) { LogInfo("InternetGetConnectedState called."); if (lpdwFlags) { *lpdwFlags = INTERNET_CONNECTION_OFFLINE; } SetLastError(ERROR_INTERNET_DISCONNECTED); LogWarning("  -> Returning FALSE (emulating OFFLINE state)."); return FALSE; }
+BOOL WINAPI ex_InternetCheckConnectionA(LPCSTR u, DWORD f, DWORD r) { LogInfo("InternetCheckConnectionA(URL: %s)", u ? u : "<null>"); SetLastError(ERROR_INTERNET_CANNOT_CONNECT); return FALSE; }
+BOOL WINAPI ex_InternetCheckConnectionW(LPCWSTR u, DWORD f, DWORD r) { LogInfo("InternetCheckConnectionW(URL: %S)", u ? u : L"<null>"); SetLastError(ERROR_INTERNET_CANNOT_CONNECT); return FALSE; }
+HINTERNET WINAPI ex_InternetOpenA(LPCSTR a, DWORD t, LPCSTR p, LPCSTR b, DWORD f) { LogInfo("InternetOpenA(Agent: '%s')", a ? a : "<null>"); return CreateFakeHandle(MAGIC_SESSION, "SESSION", NULL); }
+HINTERNET WINAPI ex_InternetOpenW(LPCWSTR a, DWORD t, LPCWSTR p, LPCWSTR b, DWORD f) { LogInfo("InternetOpenW(Agent: '%S')", a ? a : L"<null>"); return CreateFakeHandle(MAGIC_SESSION, "SESSION", NULL); }
+HINTERNET WINAPI ex_InternetConnectA(HINTERNET h, LPCSTR s, INTERNET_PORT n, LPCSTR u, LPCSTR p, DWORD d, DWORD f, DWORD_PTR c) { LogInfo("InternetConnectA(Server: '%s')", s); if (!IsValidHandle(h)) return NULL; return CreateFakeHandle(MAGIC_CONNECT, "CONNECT", h); }
+HINTERNET WINAPI ex_InternetConnectW(HINTERNET h, LPCWSTR s, INTERNET_PORT n, LPCWSTR u, LPCWSTR p, DWORD d, DWORD f, DWORD_PTR c) { LogInfo("InternetConnectW(Server: '%S')", s); if (!IsValidHandle(h)) return NULL; return CreateFakeHandle(MAGIC_CONNECT, "CONNECT", h); }
+HINTERNET WINAPI ex_InternetOpenUrlA(HINTERNET h, LPCSTR u, LPCSTR d, DWORD l, DWORD f, DWORD_PTR c) { LogInfo("InternetOpenUrlA(URL: '%s')", u); if (!IsValidHandle(h)) return NULL; return CreateFakeHandle(MAGIC_REQUEST, "URL_REQUEST", h); }
+HINTERNET WINAPI ex_InternetOpenUrlW(HINTERNET h, LPCWSTR u, LPCWSTR d, DWORD l, DWORD f, DWORD_PTR c) { LogInfo("InternetOpenUrlW(URL: '%S')", u); if (!IsValidHandle(h)) return NULL; return CreateFakeHandle(MAGIC_REQUEST, "URL_REQUEST", h); }
+HINTERNET WINAPI ex_HttpOpenRequestA(HINTERNET h, LPCSTR v, LPCSTR o, LPCSTR z, LPCSTR r, LPCSTR* t, DWORD f, DWORD_PTR c) { LogInfo("HttpOpenRequestA(Object: '%s')", o); if (!IsValidHandle(h)) return NULL; return CreateFakeHandle(MAGIC_REQUEST, "HTTP_REQUEST", h); }
+HINTERNET WINAPI ex_HttpOpenRequestW(HINTERNET h, LPCWSTR v, LPCWSTR o, LPCWSTR z, LPCWSTR r, LPCWSTR* t, DWORD f, DWORD_PTR c) { LogInfo("HttpOpenRequestW(Object: '%S')", o); if (!IsValidHandle(h)) return NULL; return CreateFakeHandle(MAGIC_REQUEST, "HTTP_REQUEST", h); }
 
-// --- Решта заглушок ---
+BOOL WINAPI ex_HttpSendRequestA(HINTERNET h, LPCSTR d, DWORD l, LPVOID o, DWORD ol) { LogInfo("HttpSendRequestA(hRequest: %p)", h); if (!IsValidHandle(h)) return FALSE; LogWarning("  -> Simulating SUCCESS to proceed to reading stage."); return TRUE; }
+BOOL WINAPI ex_HttpSendRequestW(HINTERNET h, LPCWSTR d, DWORD l, LPVOID o, DWORD ol) { LogInfo("HttpSendRequestW(hRequest: %p)", h); if (!IsValidHandle(h)) return FALSE; LogWarning("  -> Simulating SUCCESS to proceed to reading stage."); return TRUE; }
+
+BOOL WINAPI ex_InternetReadFile(HINTERNET hFile, LPVOID lpBuffer, DWORD dwNumberOfBytesToRead, LPDWORD lpdwNumberOfBytesRead) {
+    LogInfo("InternetReadFile(hFile: %p, bufferSize: %lu)", hFile, dwNumberOfBytesToRead);
+    if (!IsValidHandle(hFile)) return FALSE;
+    FAKE_HANDLE* handle = (FAKE_HANDLE*)hFile;
+    if (handle->magic != MAGIC_REQUEST && handle->magic != MAGIC_FIND_HANDLE) {
+        LogWarning("  -> Called on a non-request handle type (%s), emulating EOF.", handle->type_name);
+        if (lpdwNumberOfBytesRead) *lpdwNumberOfBytesRead = 0;
+        return TRUE;
+    }
+    handle->read_attempts++;
+    if (handle->read_attempts == 1) {
+        LogWarning("  -> Simulating IO_PENDING (attempt %lu)", handle->read_attempts);
+        if (lpdwNumberOfBytesRead) *lpdwNumberOfBytesRead = 0; SetLastError(ERROR_IO_PENDING); return FALSE;
+    }
+    if (handle->read_attempts == 2) {
+        LogWarning("  -> Simulating TIMEOUT (attempt %lu)", handle->read_attempts);
+        if (lpdwNumberOfBytesRead) *lpdwNumberOfBytesRead = 0; SetLastError(ERROR_INTERNET_TIMEOUT); return FALSE;
+    }
+    LogWarning("  -> Forcing End-Of-Stream to break loop (attempt %lu)", handle->read_attempts);
+    if (lpdwNumberOfBytesRead) *lpdwNumberOfBytesRead = 0;
+    return TRUE;
+}
+
+BOOL WINAPI ex_HttpQueryInfoA(HINTERNET h, DWORD l, LPVOID b, LPDWORD s, LPDWORD x) {
+    LogInfo("HttpQueryInfoA(hRequest: %p, InfoLevel: 0x%lX)", h, l); if (!IsValidHandle(h)) return FALSE;
+    DWORD queryType = l & HTTP_QUERY_MODIFIER_MASK;
+    if (queryType == HTTP_QUERY_STATUS_CODE || queryType == HTTP_QUERY_STATUS_TEXT) {
+        SetLastError(ERROR_INTERNET_CANNOT_CONNECT); return FALSE;
+    }
+    SetLastError(ERROR_HTTP_HEADER_NOT_FOUND); return FALSE;
+}
+BOOL WINAPI ex_HttpQueryInfoW(HINTERNET h, DWORD l, LPVOID b, LPDWORD s, LPDWORD x) {
+    LogInfo("HttpQueryInfoW(hRequest: %p, InfoLevel: 0x%lX)", h, l); if (!IsValidHandle(h)) return FALSE;
+    SetLastError(ERROR_INTERNET_CANNOT_CONNECT); return FALSE;
+}
+BOOL WINAPI ex_InternetCloseHandle(HINTERNET h) { LogInfo("InternetCloseHandle(hInternet: %p)", h); if (!IsValidHandle(h)) return FALSE; if (RemoveObjectFromList(&g_hinternet_list, &g_hinternet_list_lock, h)) { LogInfo("  -> Handle %p closed successfully.", h); return TRUE; } return FALSE; }
+
+// === ІНШІ ЗАГЛУШКИ ===
+// ... (всі інші STUB_xxx функції залишаються тут, я їх приховав для стислості)
 BOOL WINAPI ex_AppCacheCheckManifest() { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_AppCacheCloseHandle() { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_AppCacheCreateAndCommitFile() { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
@@ -246,69 +350,6 @@ BOOL WINAPI ex_HttpSendRequestExA(HINTERNET h, LPINTERNET_BUFFERSA bi, LPINTERNE
 BOOL WINAPI ex_HttpSendRequestExW(HINTERNET h, LPINTERNET_BUFFERSW bi, LPINTERNET_BUFFERSW bo, DWORD fl, DWORD_PTR ctx) { STUB_FAIL_BOOL(ERROR_INTERNET_CONNECTION_RESET); }
 BOOL WINAPI ex_HttpEndRequestA(HINTERNET h, LPINTERNET_BUFFERSA bo, DWORD fl, DWORD_PTR ctx) { STUB_FAIL_BOOL(ERROR_INTERNET_DISCONNECTED); }
 BOOL WINAPI ex_HttpEndRequestW(HINTERNET h, LPINTERNET_BUFFERSW bo, DWORD fl, DWORD_PTR ctx) { STUB_FAIL_BOOL(ERROR_INTERNET_DISCONNECTED); }
-
-BOOL WINAPI ex_HttpQueryInfoA(
-    HINTERNET hRequest,
-    DWORD dwInfoLevel,
-    LPVOID lpBuffer,
-    LPDWORD lpdwBufferLength,
-    LPDWORD lpdwIndex)
-{
-    LogInfo("HttpQueryInfoA(hRequest: %p, InfoLevel: 0x%lX, Buffer: %p)", 
-            hRequest, dwInfoLevel, lpBuffer);
-    
-    if (!IsValidHandle(hRequest)) {
-        SetLastError(ERROR_INVALID_HANDLE);
-        LogError("  -> Invalid handle!");
-        return FALSE;
-    }
-    
-    // Отримуємо базовий тип запиту (без флагів)
-    DWORD queryType = dwInfoLevel & HTTP_QUERY_MODIFIER_MASK;
-    
-    // КРИТИЧНО: Без з'єднання не повертаємо статус-код взагалі!
-    if (queryType == HTTP_QUERY_STATUS_CODE) {
-        LogError("  -> No internet connection. HTTP request failed.");
-        SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
-        return FALSE;
-    }
-    
-    // HTTP_QUERY_STATUS_TEXT — також помилка
-    if (queryType == HTTP_QUERY_STATUS_TEXT) {
-        LogError("  -> No internet connection. Cannot retrieve status text.");
-        SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
-        return FALSE;
-    }
-    
-    // Для всіх інших запитів — помилка
-    LogWarning("  -> Query type: 0x%lX - No network available", queryType);
-    SetLastError(ERROR_INTERNET_CONNECTION_ABORTED);
-    return FALSE;
-}
-
-BOOL WINAPI ex_HttpQueryInfoW(
-    HINTERNET hRequest,
-    DWORD dwInfoLevel,
-    LPVOID lpBuffer,
-    LPDWORD lpdwBufferLength,
-    LPDWORD lpdwIndex)
-{
-    LogInfo("HttpQueryInfoW(hRequest: %p, InfoLevel: 0x%lX, Buffer: %p)", 
-            hRequest, dwInfoLevel, lpBuffer);
-    
-    if (!IsValidHandle(hRequest)) {
-        SetLastError(ERROR_INVALID_HANDLE);
-        return FALSE;
-    }
-    
-    DWORD queryType = dwInfoLevel & HTTP_QUERY_MODIFIER_MASK;
-    
-    // Без з'єднання — помилка для всіх запитів
-    LogError("  -> No internet connection available (InfoLevel: 0x%lX)", queryType);
-    SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
-    return FALSE;
-}
-
 BOOL WINAPI ex_HttpAddRequestHeadersA(HINTERNET h, LPCSTR hdr, DWORD len, DWORD mod) { STUB_SUCCESS_BOOL(); }
 BOOL WINAPI ex_HttpAddRequestHeadersW(HINTERNET h, LPCWSTR hdr, DWORD len, DWORD mod) { STUB_SUCCESS_BOOL(); }
 BOOL WINAPI ex_InternetReadFileExA(HINTERNET h, LPINTERNET_BUFFERSA bo, DWORD fl, DWORD_PTR ctx) { STUB_FAIL_BOOL(ERROR_INTERNET_DISCONNECTED); }
@@ -427,8 +468,6 @@ BOOL WINAPI ex_InternetClearAllPerSiteCookieDecisions() { STUB_SUCCESS_BOOL(); }
 BOOL WINAPI ex_InternetCombineUrlA(LPCSTR bu, LPCSTR ru, LPSTR b, LPDWORD s, DWORD f) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_InternetCombineUrlW(LPCWSTR bu, LPCWSTR ru, LPWSTR b, LPDWORD s, DWORD f) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_InternetConvertUrlFromWireToWideChar() { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
-BOOL WINAPI ex_InternetCrackUrlA(LPCSTR u, DWORD ul, DWORD f, LPURL_COMPONENTSA c) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
-BOOL WINAPI ex_InternetCrackUrlW(LPCWSTR u, DWORD ul, DWORD f, LPURL_COMPONENTSW c) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_InternetCreateUrlA(LPURL_COMPONENTSA c, DWORD f, LPSTR u, LPDWORD ul) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_InternetCreateUrlW(LPURL_COMPONENTSW c, DWORD f, LPWSTR u, LPDWORD ul) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 DWORD WINAPI ex_InternetDial(HWND h, LPSTR c, DWORD f, LPDWORD con, DWORD r) { STUB_FAIL_DWORD(0, ERROR_INTERNET_DISCONNECTED); }
@@ -468,49 +507,47 @@ HRESULT WINAPI ex_DllGetClassObject(REFCLSID c, REFIID i, LPVOID* ppv) { if (ppv
 HRESULT WINAPI ex_DllInstall(BOOL b, PCWSTR c) { STUB_LOG; return S_OK; }
 HRESULT WINAPI ex_DllRegisterServer(void) { STUB_LOG; return S_OK; }
 HRESULT WINAPI ex_DllUnregisterServer(void) { STUB_LOG; return S_OK; }
-
-// --- Реалізація узагальнених функцій для сумісності з .def v1.0 ---
-BOOL WINAPI ex_InternetGetConnectedStateExA(LPDWORD f, LPSTR n, DWORD bl, DWORD r) { STUB_LOG; return ex_InternetGetConnectedState(f, r); }
-BOOL WINAPI ex_InternetGetConnectedStateExW(LPDWORD f, LPWSTR n, DWORD bl, DWORD r) { STUB_LOG; return ex_InternetGetConnectedState(f, r); }
-BOOL WINAPI ex_InternetGetConnectedStateEx(LPDWORD lpdwFlags, LPSTR lpszConnectionName, DWORD dwBufLen, DWORD dwReserved) { return ex_InternetGetConnectedStateExA(lpdwFlags, lpszConnectionName, dwBufLen, dwReserved); }
-BOOL WINAPI ex_InternetGetCookieA(LPCSTR u, LPCSTR n, LPSTR d, LPDWORD s) { LogInfo("InternetGetCookieA(Url: %s, Name: %s)", u ? u : "<null>", n ? n : "<null>"); SetLastError(ERROR_NO_MORE_ITEMS); return FALSE; }
-BOOL WINAPI ex_InternetGetCookieW(LPCWSTR u, LPCWSTR n, LPWSTR d, LPDWORD s) { LogInfo("InternetGetCookieW(Url: %S, Name: %S)", u ? u : L"<null>", n ? n : L"<null>"); SetLastError(ERROR_NO_MORE_ITEMS); return FALSE; }
-BOOL WINAPI ex_InternetGetCookie(LPCSTR u, LPCSTR n, LPSTR d, LPDWORD s) { return ex_InternetGetCookieA(u, n, d, s); }
-BOOL WINAPI ex_InternetGetCookieExA(LPCSTR u, LPCSTR n, LPSTR d, LPDWORD s, DWORD f, LPVOID r) { LogInfo("InternetGetCookieExA(Url: %s, Name: %s, Flags: 0x%lX)", u ? u : "<null>", n ? n : "<null>", f); SetLastError(ERROR_NO_MORE_ITEMS); return FALSE; }
-BOOL WINAPI ex_InternetGetCookieExW(LPCWSTR u, LPCWSTR n, LPWSTR d, LPDWORD s, DWORD f, LPVOID r) { LogInfo("InternetGetCookieExW(Url: %S, Name: %S, Flags: 0x%lX)", u ? u : L"<null>", n ? n : L"<null>", f); SetLastError(ERROR_NO_MORE_ITEMS); return FALSE; }
-BOOL WINAPI ex_InternetGetCookieEx(LPCSTR u, LPCSTR n, LPSTR d, LPDWORD s, DWORD f, LPVOID r) { return ex_InternetGetCookieExA(u, n, d, s, f, r); }
-BOOL WINAPI ex_InternetSetCookieA(LPCSTR u, LPCSTR n, LPCSTR d) { LogInfo("InternetSetCookieA(Url: %s, Name: %s, Data: %s)", u ? u : "<null>", n ? n : "<null>", d ? d : "<null>"); return TRUE; }
-BOOL WINAPI ex_InternetSetCookieW(LPCWSTR u, LPCWSTR n, LPCWSTR d) { LogInfo("InternetSetCookieW(Url: %S, Name: %S, Data: %S)", u ? u : L"<null>", n ? n : L"<null>", d ? d : L"<null>"); return TRUE; }
-BOOL WINAPI ex_InternetSetCookie(LPCSTR u, LPCSTR n, LPCSTR d) { return ex_InternetSetCookieA(u, n, d); }
-DWORD WINAPI ex_InternetSetCookieExA(LPCSTR u, LPCSTR n, LPCSTR d, DWORD f, DWORD_PTR r) { LogInfo("InternetSetCookieExA(Url: %s, Name: %s, Data: %s, Flags: 0x%lX)", u ? u : "<null>", n ? n : "<null>", d ? d : "<null>", f); return INTERNET_COOKIE_SENT_OK; }
-DWORD WINAPI ex_InternetSetCookieExW(LPCWSTR u, LPCWSTR n, LPCWSTR d, DWORD f, DWORD_PTR r) { LogInfo("InternetSetCookieExW(Url: %S, Name: %S, Data: %S, Flags: 0x%lX)", u ? u : L"<null>", n ? n : L"<null>", d ? d : L"<null>", f); return INTERNET_COOKIE_SENT_OK; }
-DWORD WINAPI ex_InternetSetCookieEx(LPCSTR u, LPCSTR n, LPCSTR d, DWORD f, DWORD_PTR r) { return ex_InternetSetCookieExA(u, n, d, f, r); }
-DWORD WINAPI ex_InternetGetCookieEx2(PCWSTR pcwszUrl, PCWSTR pcwszCookieName, DWORD dwFlags, INTERNET_COOKIE2 **ppCookies, PDWORD pdwCookieCount) { STUB_LOG; if (ppCookies) *ppCookies = NULL; if (pdwCookieCount) *pdwCookieCount = 0; SetLastError(ERROR_NO_MORE_ITEMS); return ERROR_NO_MORE_ITEMS; }
-DWORD WINAPI ex_InternetSetCookieEx2(PCWSTR pcwszUrl, const INTERNET_COOKIE2 *pCookie, PCWSTR pcwszP3PPolicy, DWORD dwFlags, PDWORD pdwCookieState) { STUB_LOG; if (pdwCookieState) *pdwCookieState = 0; return INTERNET_COOKIE_SENT_OK; }
+BOOL WINAPI ex_InternetGetConnectedStateExA(LPDWORD f, LPSTR n, DWORD bl, DWORD r) { return ex_InternetGetConnectedState(f, r); }
+BOOL WINAPI ex_InternetGetConnectedStateExW(LPDWORD f, LPWSTR n, DWORD bl, DWORD r) { return ex_InternetGetConnectedState(f, r); }
+BOOL WINAPI ex_InternetGetCookieA(LPCSTR u, LPCSTR n, LPSTR d, LPDWORD s) { LogInfo("InternetGetCookieA(Url: %s)", u); SetLastError(ERROR_NO_MORE_ITEMS); return FALSE; }
+BOOL WINAPI ex_InternetGetCookieW(LPCWSTR u, LPCWSTR n, LPWSTR d, LPDWORD s) { LogInfo("InternetGetCookieW(Url: %S)", u); SetLastError(ERROR_NO_MORE_ITEMS); return FALSE; }
+BOOL WINAPI ex_InternetGetCookieExA(LPCSTR u, LPCSTR n, LPSTR d, LPDWORD s, DWORD f, LPVOID r) { LogInfo("InternetGetCookieExA(Url: %s)", u); SetLastError(ERROR_NO_MORE_ITEMS); return FALSE; }
+BOOL WINAPI ex_InternetGetCookieExW(LPCWSTR u, LPCWSTR n, LPWSTR d, LPDWORD s, DWORD f, LPVOID r) { LogInfo("InternetGetCookieExW(Url: %S)", u); SetLastError(ERROR_NO_MORE_ITEMS); return FALSE; }
+BOOL WINAPI ex_InternetSetCookieA(LPCSTR u, LPCSTR n, LPCSTR d) { LogInfo("InternetSetCookieA(Url: %s)", u); return TRUE; }
+BOOL WINAPI ex_InternetSetCookieW(LPCWSTR u, LPCWSTR n, LPCWSTR d) { LogInfo("InternetSetCookieW(Url: %S)", u); return TRUE; }
+DWORD WINAPI ex_InternetSetCookieExA(LPCSTR u, LPCSTR n, LPCSTR d, DWORD f, DWORD_PTR r) { LogInfo("InternetSetCookieExA(Url: %s)", u); return INTERNET_COOKIE_SENT_OK; }
+DWORD WINAPI ex_InternetSetCookieExW(LPCWSTR u, LPCWSTR n, LPCWSTR d, DWORD f, DWORD_PTR r) { LogInfo("InternetSetCookieExW(Url: %S)", u); return INTERNET_COOKIE_SENT_OK; }
+DWORD WINAPI ex_InternetGetCookieEx2(PCWSTR u, PCWSTR n, DWORD f, INTERNET_COOKIE2** c, PDWORD cd) { if (c) *c = NULL; if (cd) *cd = 0; SetLastError(ERROR_NO_MORE_ITEMS); return ERROR_NO_MORE_ITEMS; }
+DWORD WINAPI ex_InternetSetCookieEx2(PCWSTR u, const INTERNET_COOKIE2* c, PCWSTR p, DWORD f, PDWORD s) { if (s) *s = 0; return INTERNET_COOKIE_SENT_OK; }
 BOOL WINAPI ex_InternetGoOnlineA(LPSTR u, HWND h, DWORD f) { STUB_FAIL_BOOL(ERROR_INTERNET_DISCONNECTED); }
 BOOL WINAPI ex_InternetGoOnlineW(LPWSTR u, HWND h, DWORD f) { STUB_FAIL_BOOL(ERROR_INTERNET_DISCONNECTED); }
-BOOL WINAPI ex_InternetGoOnline(LPSTR u, HWND h, DWORD f) { return ex_InternetGoOnlineA(u, h, f); }
 BOOL WINAPI ex_InternetSetDialStateA(LPCSTR c, DWORD s, DWORD r) { STUB_SUCCESS_BOOL(); }
 BOOL WINAPI ex_InternetSetDialStateW(LPCWSTR c, DWORD s, DWORD r) { STUB_SUCCESS_BOOL(); }
-BOOL WINAPI ex_InternetSetDialState(LPCSTR c, DWORD s, DWORD r) { return ex_InternetSetDialStateA(c, s, r); }
 BOOL WINAPI ex_InternetTimeFromSystemTimeA(const SYSTEMTIME* pst, DWORD rfc, LPSTR t, DWORD s) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_InternetTimeFromSystemTimeW(const SYSTEMTIME* pst, DWORD rfc, LPWSTR t, DWORD s) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
-BOOL WINAPI ex_InternetTimeFromSystemTime(const SYSTEMTIME* pst, DWORD rfc, LPSTR t, DWORD s) { return ex_InternetTimeFromSystemTimeA(pst, rfc, t, s); }
 BOOL WINAPI ex_InternetTimeToSystemTimeA(LPCSTR t, SYSTEMTIME* pst, DWORD r) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_InternetTimeToSystemTimeW(LPCWSTR t, SYSTEMTIME* pst, DWORD r) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
-BOOL WINAPI ex_InternetTimeToSystemTime(LPCSTR t, SYSTEMTIME* pst, DWORD r) { return ex_InternetTimeToSystemTimeA(t, pst, r); }
-BOOL WINAPI ex_DeleteUrlCacheEntry(LPCSTR u) { return ex_DeleteUrlCacheEntryA(u); }
 DWORD WINAPI ex_InternetConfirmZoneCrossingA(HWND h, LPSTR up, LPSTR un, BOOL p) { STUB_LOG; return 0; }
 DWORD WINAPI ex_InternetConfirmZoneCrossingW(HWND h, LPWSTR up, LPWSTR un, BOOL p) { STUB_LOG; return 0; }
-DWORD WINAPI ex_InternetConfirmZoneCrossing(HWND h, LPSTR up, LPSTR un, BOOL p) { return ex_InternetConfirmZoneCrossingA(h, up, un, p); }
 BOOL WINAPI ex_InternetGetCertByURLA() { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
-BOOL WINAPI ex_InternetGetCertByURL(LPCSTR u, PCCERT_CONTEXT* c, DWORD f) { return ex_InternetGetCertByURLA(); }
 BOOL WINAPI ex_InternetGetSecurityInfoByURLA() { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_InternetGetSecurityInfoByURLW() { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
-BOOL WINAPI ex_InternetGetSecurityInfoByURL(LPCWSTR u, PCCERT_CHAIN_CONTEXT* c, DWORD *f) { return ex_InternetGetSecurityInfoByURLW(); }
 BOOL WINAPI ex_InternetShowSecurityInfoByURLA(HWND hWnd, LPCSTR lpszUrl) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
 BOOL WINAPI ex_InternetShowSecurityInfoByURLW(HWND hWnd, LPCWSTR lpszUrl) { STUB_FAIL_BOOL(ERROR_NOT_SUPPORTED); }
+BOOL WINAPI ex_InternetGetConnectedStateEx(LPDWORD f, LPSTR n, DWORD bl, DWORD r) { return ex_InternetGetConnectedStateExA(f, n, bl, r); }
+BOOL WINAPI ex_InternetGetCookie(LPCSTR u, LPCSTR n, LPSTR d, LPDWORD s) { return ex_InternetGetCookieA(u, n, d, s); }
+BOOL WINAPI ex_InternetGetCookieEx(LPCSTR u, LPCSTR n, LPSTR d, LPDWORD s, DWORD f, LPVOID r) { return ex_InternetGetCookieExA(u, n, d, s, f, r); }
+BOOL WINAPI ex_InternetSetCookie(LPCSTR u, LPCSTR n, LPCSTR d) { return ex_InternetSetCookieA(u, n, d); }
+DWORD WINAPI ex_InternetSetCookieEx(LPCSTR u, LPCSTR n, LPCSTR d, DWORD f, DWORD_PTR r) { return ex_InternetSetCookieExA(u, n, d, f, r); }
+BOOL WINAPI ex_InternetGoOnline(LPSTR u, HWND h, DWORD f) { return ex_InternetGoOnlineA(u, h, f); }
+BOOL WINAPI ex_InternetSetDialState(LPCSTR c, DWORD s, DWORD r) { return ex_InternetSetDialStateA(c, s, r); }
+BOOL WINAPI ex_InternetTimeFromSystemTime(const SYSTEMTIME* pst, DWORD rfc, LPSTR t, DWORD s) { return ex_InternetTimeFromSystemTimeA(pst, rfc, t, s); }
+BOOL WINAPI ex_InternetTimeToSystemTime(LPCSTR t, SYSTEMTIME* pst, DWORD r) { return ex_InternetTimeToSystemTimeA(t, pst, r); }
+DWORD WINAPI ex_InternetConfirmZoneCrossing(HWND h, LPSTR up, LPSTR un, BOOL p) { return ex_InternetConfirmZoneCrossingA(h, up, un, p); }
+BOOL WINAPI ex_InternetGetCertByURL(LPCSTR u, PCCERT_CONTEXT* c, DWORD f) { return ex_InternetGetCertByURLA(); }
+BOOL WINAPI ex_InternetGetSecurityInfoByURL(LPCWSTR u, PCCERT_CHAIN_CONTEXT* c, DWORD* f) { return ex_InternetGetSecurityInfoByURLW(); }
 BOOL WINAPI ex_InternetShowSecurityInfoByURL(HWND hWnd, LPCWSTR lpszUrl) { return ex_InternetShowSecurityInfoByURLW(hWnd, lpszUrl); }
+BOOL WINAPI ex_DeleteUrlCacheEntry(LPCSTR u) { return ex_DeleteUrlCacheEntryA(u); }
 BOOL WINAPI ex_SetUrlCacheEntryGroup(LPCSTR u, DWORD f, GROUPID g, LPBYTE ga, DWORD gs, LPVOID r) { return ex_SetUrlCacheEntryGroupA(u, f, g, ga, gs, r); }
 BOOL WINAPI ex_UnlockUrlCacheEntryFile(LPCSTR u, DWORD r) { return ex_UnlockUrlCacheEntryFileA(u, r); }
 
@@ -530,24 +567,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         InitializeCriticalSection(&g_hinternet_list_lock);
         g_locks_initialized = TRUE;
 #if ENABLE_DEBUG_CONSOLE
-        if (AllocConsole()) {
-            FILE* fDummy;
-            freopen_s(&fDummy, "CONOUT$", "w", stdout);
-            SetConsoleTitleA("WinINet Stub Debug Console v1.0");
-        }
+        if (AllocConsole()) { FILE* f; freopen_s(&f, "CONOUT$", "w", stdout); SetConsoleTitleA("WinINet Stub Debug Console v1.0.3"); }
 #endif
 #if ENABLE_FILE_LOGGING
-        {
-            char log_path[MAX_PATH]; char exe_path[MAX_PATH]; GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-            char* last_slash = strrchr(exe_path, '\\'); if (last_slash) *(last_slash + 1) = '\0';
-            snprintf(log_path, MAX_PATH, "%swininet_mock.log", exe_path);
-            fopen_s(&g_log_file, log_path, "a");
-        }
+        { char p[MAX_PATH]; GetModuleFileNameA(NULL, p, MAX_PATH); char* s=strrchr(p, '\\'); if(s)*(s+1)='\0'; strcat_s(p, "wininet_stub.log"); fopen_s(&g_log_file, p, "a"); }
 #endif
-        LogInfo("=== WININET STUB v1.0.1 LOADED ==="); LogInfo("Build: %s %s", __DATE__, __TIME__);
+        LogInfo("=== WININET STUB v1.0.3 LOADED ==="); LogInfo("Build: %s %s", __DATE__, __TIME__);
         break;
     case DLL_PROCESS_DETACH:
-        LogInfo("=== WININET STUB v1.0.1 UNLOADING ===");
+        LogInfo("=== WININET STUB v1.0.3 UNLOADING ===");
         if (g_locks_initialized) {
             CleanupObjectList(&g_hinternet_list, &g_hinternet_list_lock, "HINTERNET Handles");
 #if ENABLE_MEMORY_TRACKING
@@ -558,7 +586,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             DeleteCriticalSection(&g_memory_lock);
 #endif
 #if ENABLE_FILE_LOGGING
-            if (g_log_file) { LogInfo("Closing log file."); fclose(g_log_file); g_log_file = NULL; }
+            if (g_log_file) { fclose(g_log_file); g_log_file = NULL; }
             DeleteCriticalSection(&g_log_lock);
 #endif
             g_locks_initialized = FALSE;

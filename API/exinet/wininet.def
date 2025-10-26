@@ -1,8 +1,4 @@
-; wininet.def
-; Файл визначення модуля для заглушки wininet.dll (ВИПРАВЛЕНА ВЕРСІЯ)
-
-LIBRARY wininet
-
+LIBRARY WININET
 EXPORTS
     AppCacheCheckManifest=ex_AppCacheCheckManifest @106
     AppCacheCloseHandle=ex_AppCacheCloseHandle @107
