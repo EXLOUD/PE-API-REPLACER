@@ -384,7 +384,7 @@ For native library contributions, ensure compilation with **llvm-mingw 21.1.3**.
 
 <div align="center">
 
-**Version:** 1.0.8 
+**Version:** 1.0.9
 **Last Updated:** 2025  
 **Status:** ✅ Stable  
 **Built with:** Python 3.10+, PyQt6, C/llvm-mingw 21.1.3
