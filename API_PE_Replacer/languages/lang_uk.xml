@@ -1,113 +1,116 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-	<string name="language_name">Українська</string>
-
-    <!-- Основний UI -->
+    <string name="language_name">Українська</string>
+	
+    <!-- Titles & UI -->
     <string name="app_title">PE API Replacer</string>
     <string name="version">Версія</string>
-    <string name="files">файлів</string>
+    <string name="files">файли</string>
     <string name="add_files">Додати файли</string>
-    <string name="add_folder">Додати папку</string>
+    <string name="add_folder">Додати теку</string>
     <string name="start_patching">Почати патчинг</string>
     <string name="clear_all">Очистити все</string>
     <string name="files_not_added">Файли не додано</string>
-    <string name="add_pe_files_hint">Додайте PE файли для початку</string>
+    <string name="add_pe_files_hint">Додайте PE-файли, щоб почати</string>
     <string name="settings">Налаштування</string>
-    <string name="logs">Логи</string>
+    <string name="logs">Журнали</string>
     <string name="clear">Очистити</string>
     <string name="about">Про програму</string>
     <string name="api_group_title">API для заміни</string>
-    <string name="all_apis">Всі API</string>
-    <string name="options_group_title">Опції збереження</string>
-    <string name="create_backups">Створювати бекапи</string>
+    <string name="all_apis">Усі API</string>
+    <string name="options_group_title">Параметри збереження</string>
+    <string name="create_backups">Створювати резервні копії</string>
     <string name="overwrite_originals">Перезаписувати оригінали</string>
     <string name="cancel">Скасувати</string>
     <string name="cancelling">Скасування...</string>
     <string name="close">Закрити</string>
     <string name="author">Автор</string>
-    <string name="donation_title">💰 Донат (натисніть щоб скопіювати):</string>
+    <string name="donation_title">💰 Підтримати (натисніть, щоб скопіювати):</string>
 
-    <!-- Діалоги -->
-    <string name="dialog_select_pe_files">Виберіть PE Файли</string>
-    <string name="dialog_pe_files_filter">PE Файли (*.exe *.dll *.vst3 *.vst *.sys);;Всі файли (*)</string>
-    <string name="dialog_search_option">Опція пошуку</string>
-    <string name="dialog_search_subfolders">Шукати файли у підпапках?</string>
+    <!-- Dialogs -->
+    <string name="dialog_select_pe_files">Виберіть PE-файли</string>
+    <string name="dialog_pe_files_filter">PE-файли (*.exe *.dll *.vst3 *.vst *.sys);;Усі файли (*)</string>
+    <string name="dialog_search_option">Параметр пошуку</string>
+    <string name="dialog_search_subfolders">Шукати у вкладених теках?</string>
     <string name="dialog_yes_recursive">Так (рекурсивно)</string>
-    <string name="dialog_no_folder_only">Ні (лише ця папка)</string>
+    <string name="dialog_no_folder_only">Ні (тільки ця тека)</string>
     <string name="dialog_cancel">Скасувати</string>
-    <string name="dialog_select_folder">Виберіть папку</string>
-    <string name="dialog_op_in_progress">Операція в процесі</string>
-    <string name="dialog_cannot_clear">Не можна очистити список, доки виконується задача.</string>
-    <string name="dialog_list_empty">Список пустий</string>
+    <string name="dialog_select_folder">Виберіть теку</string>
+    <string name="dialog_op_in_progress">Виконується операція</string>
+    <string name="dialog_cannot_clear">Неможливо очистити список під час виконання завдання.</string>
+    <string name="dialog_list_empty">Список порожній</string>
     <string name="dialog_no_files_to_clear">Немає файлів для очищення.</string>
     <string name="dialog_confirmation">Підтвердження</string>
     <string name="dialog_clear_all_q">Видалити всі файли зі списку?</string>
     <string name="dialog_completed_title">Завершено</string>
-    <string name="warning_title">Увага</string>
+    <string name="dialog_cancelled_title">Патчинг скасовано</string>
+    <string name="dialog_cancel_remaining">Залишилося {0} файлів у списку. Ви можете продовжити пізніше.</string>
+    <string name="warning_title">Попередження</string>
     <string name="warning_no_files">Немає файлів для патчингу</string>
-    <string name="warning_no_api">Виберіть хоча б один API</string>
+    <string name="warning_no_api">Виберіть принаймні один API</string>
     <string name="task_analyzing_files">Аналіз файлів</string>
     <string name="task_patching_files">Патчинг файлів</string>
-    <string name="scan_folder_title">Сканування папки</string>
+    <string name="scan_folder_title">Сканування теки</string>
     <string name="scanning_status_searching">Пошук...</string>
     <string name="add_n_files">Додати {0} файлів</string>
     <string name="found_n_files">Знайдено {0} файлів</string>
-    <string name="no_pe_files_found">PE файлів не знайдено</string>
-    <string name="skipped_folders_info">ℹ️ Пропущено папки: </string>
-
-    <!-- Логи -->
+    <string name="no_pe_files_found">PE-файли не знайдено</string>
+    <string name="skipped_folders_info">ℹ️ Пропущені теки: </string>
+    
+    <!-- Logs -->
     <string name="log_app_started">Запущено {0} v{1}</string>
     <string name="log_scanning_folder">Сканування: {0}{1}</string>
-    <string name="log_with_subfolders"> (з підпапками)</string>
-    <string name="log_all_files_added">Всі обрані файли вже додано</string>
+    <string name="log_with_subfolders"> (з підтеками)</string>
+    <string name="log_all_files_added">Усі вибрані файли вже є у списку</string>
     <string name="log_files_added">Додано {0} файлів</string>
     <string name="log_files_skipped">Пропущено {0} файлів (не PE)</string>
     <string name="log_list_cleared">Список файлів очищено</string>
-    <string name="log_cleared">Логи очищено</string>
-    <string name="log_operation_stopped">Операцію було зупинено.</string>
+    <string name="log_cleared">Журнали очищено</string>
+    <string name="log_operation_stopped">Операцію зупинено.</string>
     <string name="log_copied">✅ Скопійовано {0}: {1}...</string>
     <string name="log_cancel_request">Отримано запит на скасування...</string>
     <string name="log_patching_cancelled">Процес патчингу скасовано користувачем.</string>
+    <string name="log_patched_files_removed">Видалено {0} з {1} файлів (залишилось {2} для обробки)</string>
     <string name="log_processing_file">Обробка: {0} {1}</string>
     <string name="log_read_error">❌ Помилка читання: {0}</string>
     <string name="log_nothing_to_patch">⚠️ Немає що патчити</string>
-    <string name="log_backup_saved">📁 Бекап збережено: {0}</string>
+    <string name="log_backup_saved">📁 Резервну копію збережено: {0}</string>
     <string name="log_original_replaced">🔄 Оригінал замінено</string>
-    <string name="log_move_error">❌ Помилка переміщення: {0}</string>
+    <string name="log_move_error">❌ Помилка переміщення файлу: {0}</string>
     <string name="log_general_error">❌ Загальна помилка: {0}</string>
-    <string name="log_readonly_file">⚠️ Файл '{0}' тільки для читання. Зміна прав...</string>
-    <string name="log_changing_perms">   Спроба змінити права доступу...</string>
-    <string name="log_perms_changed">✅ Права змінено на read/write</string>
-    <string name="log_perms_error">❌ Помилка при зміні прав доступу: {0}</string>
-    <string name="log_restoring_perms">🔄 Відновлення оригінальних прав...</string>
-    <string name="log_perms_restored">✅ Права відновлено</string>
-    <string name="log_restore_perms_error">❌ Помилка при відновленні прав: {0}</string>
+    <string name="log_readonly_file">⚠️ Файл '{0}' доступний лише для читання. Зміна дозволів...</string>
+    <string name="log_changing_perms">   Спроба змінити дозволи...</string>
+    <string name="log_perms_changed">✅ Дозволи змінено на читання/запис</string>
+    <string name="log_perms_error">❌ Помилка зміни дозволів: {0}</string>
+    <string name="log_restoring_perms">🔄 Відновлення початкових дозволів...</string>
+    <string name="log_perms_restored">✅ Дозволи відновлено</string>
+    <string name="log_restore_perms_error">❌ Помилка відновлення дозволів: {0}</string>
     <string name="log_load_error">❌ Помилка завантаження: {0}</string>
     <string name="log_patch_details_header">📊 Деталі перед патчингом:</string>
     <string name="log_patch_details_iat">   [IAT] {0}</string>
     <string name="log_patch_details_hex">   [HEX] {0}</string>
     <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
-    <string name="log_iat_skipped_long">   ⚠️ [IAT] Пропущено {0}, заміна занадто довга.</string>
-    <string name="log_hex_skipped_len">   ⚠️ [HEX] Пропуск {0}, довжина не збігається.</string>
-    <string name="log_patch_stats_header">📈 Фінальна статистика патчингу:</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] Пропущено {0}, заміна задовга.</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] Пропускається {0}, невідповідність довжини.</string>
+    <string name="log_patch_stats_header">📈 Кінцева статистика патчингу:</string>
     <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
-    <string name="log_total_changes">   ВСЬОГО: {0} змін</string>
+    <string name="log_total_changes">   УСЬОГО: {0} змін</string>
     <string name="log_file_saved">💾 Збережено: {0}</string>
     <string name="log_save_error">❌ Помилка збереження: {0}</string>
-
-    <!-- Статуси файлів -->
+    
+    <!-- File Statuses -->
     <string name="status_ready">Готово</string>
     <string name="status_cancelled">Скасовано</string>
     <string name="status_error">Помилка</string>
-    <string name="status_done">Готово</string>
+    <string name="status_done">Виконано</string>
     <string name="status_skipped">Пропущено</string>
     <string name="status_no_changes">Без змін</string>
 
-    <!-- Підсумки -->
-    <string name="summary_patched">{0} пропатчено</string>
-    <string name="summary_skipped">{0} пропущено</string>
-    <string name="summary_errors">{0} з помилками</string>
+    <!-- Summaries -->
+    <string name="summary_patched">Пропатчено: {0}</string>
+    <string name="summary_skipped">Пропущено: {0}</string>
+    <string name="summary_errors">З помилками: {0}</string>
     <string name="summary_cancelled_prefix">Скасовано: </string>
     <string name="summary_finished_prefix">Завершено: </string>
-    <string name="summary_no_ops">Операцій не виконано</string>
+    <string name="summary_no_ops">Жодних операцій не виконано</string>
 </resources>

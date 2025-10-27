@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="language_name">中文</string>
+    <string name="language_name">简体中文</string>
 	
     <!-- Titles & UI -->
     <string name="app_title">PE API Replacer</string>
@@ -20,93 +20,96 @@
     <string name="all_apis">所有API</string>
     <string name="options_group_title">保存选项</string>
     <string name="create_backups">创建备份</string>
-    <string name="overwrite_originals">覆盖原始文件</string>
+    <string name="overwrite_originals">覆盖原文件</string>
     <string name="cancel">取消</string>
-    <string name="cancelling">取消中...</string>
+    <string name="cancelling">正在取消...</string>
     <string name="close">关闭</string>
     <string name="author">作者</string>
-    <string name="donation_title">💰 捐赠（点击复制）：</string>
+    <string name="donation_title">💰 捐赠 (点击复制):</string>
 
     <!-- Dialogs -->
     <string name="dialog_select_pe_files">选择PE文件</string>
     <string name="dialog_pe_files_filter">PE文件 (*.exe *.dll *.vst3 *.vst *.sys);;所有文件 (*)</string>
     <string name="dialog_search_option">搜索选项</string>
-    <string name="dialog_search_subfolders">在子文件夹中搜索?</string>
-    <string name="dialog_yes_recursive">是（递归）</string>
-    <string name="dialog_no_folder_only">否（仅此文件夹）</string>
+    <string name="dialog_search_subfolders">是否搜索子文件夹？</string>
+    <string name="dialog_yes_recursive">是 (递归)</string>
+    <string name="dialog_no_folder_only">否 (仅此文件夹)</string>
     <string name="dialog_cancel">取消</string>
     <string name="dialog_select_folder">选择文件夹</string>
     <string name="dialog_op_in_progress">操作进行中</string>
     <string name="dialog_cannot_clear">任务运行时无法清除列表。</string>
     <string name="dialog_list_empty">列表为空</string>
-    <string name="dialog_no_files_to_clear">没有要清除的文件。</string>
+    <string name="dialog_no_files_to_clear">没有可清除的文件。</string>
     <string name="dialog_confirmation">确认</string>
-    <string name="dialog_clear_all_q">从列表中删除所有文件?</string>
+    <string name="dialog_clear_all_q">从列表中移除所有文件？</string>
     <string name="dialog_completed_title">已完成</string>
+    <string name="dialog_cancelled_title">修补已取消</string>
+    <string name="dialog_cancel_remaining">列表中还剩 {0} 个文件。您可以稍后继续。</string>
     <string name="warning_title">警告</string>
-    <string name="warning_no_files">没有要修补的文件</string>
-    <string name="warning_no_api">至少选择一个API</string>
-    <string name="task_analyzing_files">分析文件</string>
-    <string name="task_patching_files">修补文件</string>
-    <string name="scan_folder_title">扫描文件夹</string>
-    <string name="scanning_status_searching">搜索中...</string>
+    <string name="warning_no_files">沒有要修補的文件</string>
+    <string name="warning_no_api">请至少选择一个API</string>
+    <string name="task_analyzing_files">正在分析文件</string>
+    <string name="task_patching_files">正在修补文件</string>
+    <string name="scan_folder_title">正在扫描文件夹</string>
+    <string name="scanning_status_searching">正在搜索...</string>
     <string name="add_n_files">添加 {0} 个文件</string>
     <string name="found_n_files">找到 {0} 个文件</string>
     <string name="no_pe_files_found">未找到PE文件</string>
-    <string name="skipped_folders_info">ℹ️ 跳过的文件夹: </string>
+    <string name="skipped_folders_info">ℹ️ 已跳过的文件夹：</string>
     
     <!-- Logs -->
-    <string name="log_app_started">启动 {0} v{1}</string>
-    <string name="log_scanning_folder">扫描: {0}{1}</string>
-    <string name="log_with_subfolders"> (包含子文件夹)</string>
-    <string name="log_all_files_added">所有选定的文件已在列表中</string>
+    <string name="log_app_started">已启动 {0} v{1}</string>
+    <string name="log_scanning_folder">正在扫描: {0}{1}</string>
+    <string name="log_with_subfolders"> (包括子文件夹)</string>
+    <string name="log_all_files_added">所有选定文件已在列表中</string>
     <string name="log_files_added">已添加 {0} 个文件</string>
-    <string name="log_files_skipped">跳过 {0} 个文件 (不是PE)</string>
+    <string name="log_files_skipped">已跳过 {0} 个文件 (非PE)</string>
     <string name="log_list_cleared">文件列表已清除</string>
     <string name="log_cleared">日志已清除</string>
     <string name="log_operation_stopped">操作已停止。</string>
     <string name="log_copied">✅ 已复制 {0}: {1}...</string>
     <string name="log_cancel_request">收到取消请求...</string>
-    <string name="log_patching_cancelled">修补过程已被用户取消。</string>
-    <string name="log_processing_file">处理: {0} {1}</string>
+    <string name="log_patching_cancelled">用户已取消修补过程。</string>
+    <string name="log_patched_files_removed">已从 {1} 个文件中移除 {0} 个 (剩余 {2} 个待处理)</string>
+    <string name="log_processing_file">正在处理: {0} {1}</string>
     <string name="log_read_error">❌ 读取错误: {0}</string>
-    <string name="log_nothing_to_patch">⚠️ 没有要修补的内容</string>
+    <string name="log_nothing_to_patch">⚠️ 无内容可修补</string>
     <string name="log_backup_saved">📁 备份已保存: {0}</string>
-    <string name="log_original_replaced">📄 原始文件已替换</string>
+    <string name="log_original_replaced">🔄 原文件已替换</string>
     <string name="log_move_error">❌ 文件移动错误: {0}</string>
     <string name="log_general_error">❌ 常规错误: {0}</string>
-    <string name="log_readonly_file">⚠️ 文件 '{0}' 为只读。正在改变权限...</string>
-    <string name="log_changing_perms">   尝试改变权限...</string>
-    <string name="log_perms_changed">✅ 权限已改为读/写</string>
-    <string name="log_perms_error">❌ 改变权限错误: {0}</string>
-    <string name="log_restoring_perms">📄 恢复原始权限...</string>
+    <string name="log_readonly_file">⚠️ 文件 '{0}' 是只读的。正在更改权限...</string>
+    <string name="log_changing_perms">   正在尝试更改权限...</string>
+    <string name="log_perms_changed">✅ 权限已更改为读/写</string>
+    <string name="log_perms_error">❌ 更改权限时出错: {0}</string>
+    <string name="log_restoring_perms">🔄 正在恢复原始权限...</string>
     <string name="log_perms_restored">✅ 权限已恢复</string>
-    <string name="log_restore_perms_error">❌ 恢复权限错误: {0}</string>
+    <string name="log_restore_perms_error">❌ 恢复权限时出错: {0}</string>
     <string name="log_load_error">❌ 加载错误: {0}</string>
     <string name="log_patch_details_header">📊 修补前详情:</string>
     <string name="log_patch_details_iat">   [IAT] {0}</string>
     <string name="log_patch_details_hex">   [HEX] {0}</string>
     <string name="log_iat_patched">   ✅ [IAT] {0} → {1}</string>
-    <string name="log_iat_skipped_long">   ⚠️ [IAT] 跳过 {0}，替换过长。</string>
-    <string name="log_hex_skipped_len">   ⚠️ [HEX] 跳过 {0}，长度不匹配。</string>
+    <string name="log_iat_skipped_long">   ⚠️ [IAT] 已跳过 {0}，替换内容过长。</string>
+    <string name="log_hex_skipped_len">   ⚠️ [HEX] 正在跳过 {0}，长度不匹配。</string>
     <string name="log_patch_stats_header">📈 最终修补统计:</string>
-    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}x)</string>
+    <string name="log_hex_patched">   ✅ [HEX] {0} → {1} ({2}次)</string>
     <string name="log_total_changes">   总计: {0} 处更改</string>
     <string name="log_file_saved">💾 已保存: {0}</string>
     <string name="log_save_error">❌ 保存错误: {0}</string>
     
     <!-- File Statuses -->
-    <string name="status_ready">就绪</string>
+    <string name="status_ready">准备就绪</string>
     <string name="status_cancelled">已取消</string>
     <string name="status_error">错误</string>
-    <string name="status_done">已完成</string>
+    <string name="status_done">完成</string>
     <string name="status_skipped">已跳过</string>
     <string name="status_no_changes">无更改</string>
 
     <!-- Summaries -->
-    <string name="summary_patched">{0} 个已修补</string>
-    <string name="summary_skipped">{0} 个已跳过</string>
-    <string name="summary_errors">{0} 个出错</string>
+    <string name="summary_patched">{0} 已修补</string>
+    <string name="summary_skipped">{0} 已跳过</string>
+    <string name="summary_errors">{0} 存在错误</string>
     <string name="summary_cancelled_prefix">已取消: </string>
     <string name="summary_finished_prefix">已完成: </string>
     <string name="summary_no_ops">未执行任何操作</string>

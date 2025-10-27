@@ -43,6 +43,8 @@
     <string name="dialog_confirmation">Confirmation</string>
     <string name="dialog_clear_all_q">Remove all files from the list?</string>
     <string name="dialog_completed_title">Completed</string>
+    <string name="dialog_cancelled_title">Patching cancelled</string>
+    <string name="dialog_cancel_remaining">{0} files remaining in the list. You can continue later.</string>
     <string name="warning_title">Warning</string>
     <string name="warning_no_files">No files to patch</string>
     <string name="warning_no_api">Select at least one API</string>
@@ -68,6 +70,7 @@
     <string name="log_copied">✅ Copied {0}: {1}...</string>
     <string name="log_cancel_request">Cancel request received...</string>
     <string name="log_patching_cancelled">Patching process cancelled by user.</string>
+    <string name="log_patched_files_removed">Removed {0} out of {1} files (remaining {2} for processing)</string>
     <string name="log_processing_file">Processing: {0} {1}</string>
     <string name="log_read_error">❌ Read error: {0}</string>
     <string name="log_nothing_to_patch">⚠️ Nothing to patch</string>
