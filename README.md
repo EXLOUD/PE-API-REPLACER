@@ -3,7 +3,7 @@
 ### 👇
 
   <p>
-    <a href="https://github.com/EXLOUD/PE-API-REPLACER/releases/download/v1.0.8/PE-API-REPLACER_v1.0.8.zip">
+    <a href="https://github.com/EXLOUD/PE-API-REPLACER/releases/download/v1.0.9/PE-API-REPLACER_v1.0.9.zip">
       <img src="https://img.shields.io/badge/Download_PE_API_Replacer-darkgreen?style=for-the-badge&logo=download&logoColor=white">
     </a>
   </p>
