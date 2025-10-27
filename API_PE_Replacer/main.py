@@ -55,7 +55,7 @@ DONATION_ADDRESSES = {
 # 0. ГЛОБАЛЬНІ КОНФІГУРАЦІЇ
 # =============================================================================
 
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 LANG_FOLDER = "languages"
 
 def sanitize_filename(filename: str) -> str:
@@ -338,68 +338,156 @@ class FolderScannerWorker(QObject):
     def cancel(self): self.is_cancelled = True
 
 class PatcherWorker(QObject):
-    log_message = pyqtSignal(str, str, list); file_status_updated = pyqtSignal(str, str, str)
-    progress_updated = pyqtSignal(int); finished = pyqtSignal(tuple, bool)
+    log_message = pyqtSignal(str, str, list)
+    file_status_updated = pyqtSignal(str, str, str)
+    progress_updated = pyqtSignal(int)
+    finished = pyqtSignal(tuple, bool, int, int, int)  # ← НОВЕ: +int для remaining_files
+    
     def __init__(self, files, selected_apis, backup, overwrite):
         super().__init__()
         self.files, self.selected_apis = files, selected_apis
         self.backup_var, self.overwrite_var = backup, overwrite
         self.is_cancelled = False
-        self.log_emitter = PatcherLogEmitter(); self.log_emitter.log_signal.connect(self.log_message)
-    def cancel(self): self.log_message.emit("log_cancel_request", "warning", []); self.is_cancelled = True
+        self.total_files = len(files)
+        self.log_emitter = PatcherLogEmitter()
+        self.log_emitter.log_signal.connect(self.log_message)
+    
+    def cancel(self):
+        self.log_message.emit("log_cancel_request", "warning", [])
+        self.is_cancelled = True
+    
     def run(self):
-        s, e, k, total = 0, 0, 0, len(self.files); was_cancelled = False
+        s, e, k, total = 0, 0, 0, len(self.files)
+        was_cancelled = False
+        cancelled_file_index = None
+        
         try:
             for i, info in enumerate(self.files):
                 if self.is_cancelled:
-                    was_cancelled = True; self.log_message.emit("log_patching_cancelled", "warning", [])
-                    for remaining_info in self.files[i:]: self.file_status_updated.emit(remaining_info['path'], 'warning', 'status_cancelled')
+                    was_cancelled = True
+                    cancelled_file_index = i
+                    self.log_message.emit("log_patching_cancelled", "warning", [])
+                    
+                    for remaining_info in self.files[i:]:
+                        self.file_status_updated.emit(remaining_info['path'], 'warning', 'status_cancelled')
                     break
+
                 path, name = info['path'], sanitize_filename(os.path.basename(info['path']))
-                self.log_message.emit("", "info", []); self.log_message.emit("log_processing_file", "info", [f"[{i+1}/{total}]", os.path.basename(path)])
+                self.log_message.emit("", "info", [])
+                self.log_message.emit("log_processing_file", "info", [f"[{i+1}/{total}]", os.path.basename(path)])
                 original_file_data = None
+
                 try:
-                    with open(path, 'rb') as f: original_file_data = f.read()
+                    with open(path, 'rb') as f:
+                        original_file_data = f.read()
                 except Exception as read_err:
-                    self.log_message.emit("log_read_error", "error", [str(read_err)]); e += 1
-                    self.file_status_updated.emit(path, 'error', 'status_error'); self.progress_updated.emit(int((i + 1) / total * 100)); continue
+                    self.log_message.emit("log_read_error", "error", [str(read_err)])
+                    e += 1
+                    self.file_status_updated.emit(path, 'error', 'status_error')
+                    self.progress_updated.emit(int((i + 1) / total * 100))
+                    continue
+
                 patcher = None
                 try:
                     with PermissionsManager(path, self.log_emitter):
+                        if self.is_cancelled:
+                            was_cancelled = True
+                            cancelled_file_index = i
+                            self.log_message.emit("log_patching_cancelled", "warning", [])
+                            for remaining_info in self.files[i:]:
+                                self.file_status_updated.emit(remaining_info['path'], 'warning', 'status_cancelled')
+                            break
+
                         patcher = UniversalPEPatcher(path, self.selected_apis, self.log_emitter)
                         if not patcher.load_file() or patcher.check_if_patchable() == 0:
-                            self.log_message.emit("log_nothing_to_patch", "warning", []); k += 1
-                            self.file_status_updated.emit(path, 'warning', 'status_skipped'); self.progress_updated.emit(int((i + 1) / total * 100)); continue
+                            self.log_message.emit("log_nothing_to_patch", "warning", [])
+                            k += 1
+                            self.file_status_updated.emit(path, 'warning', 'status_skipped')
+                            self.progress_updated.emit(int((i + 1) / total * 100))
+                            continue
+
+                        if self.is_cancelled:
+                            was_cancelled = True
+                            cancelled_file_index = i
+                            self.log_message.emit("log_patching_cancelled", "warning", [])
+                            for remaining_info in self.files[i:]:
+                                self.file_status_updated.emit(remaining_info['path'], 'warning', 'status_cancelled')
+                            break
+
                         p_count = patcher.patch_all()
+
                         if p_count > 0:
+                            if self.is_cancelled:
+                                was_cancelled = True
+                                cancelled_file_index = i
+                                self.log_message.emit("log_patching_cancelled", "warning", [])
+                                for remaining_info in self.files[i:]:
+                                    self.file_status_updated.emit(remaining_info['path'], 'warning', 'status_cancelled')
+                                break
+
                             if self.backup_var:
-                                b_dir = os.path.join(os.path.dirname(path), 'backup'); os.makedirs(b_dir, exist_ok=True)
-                                b_path, cnt = os.path.join(b_dir, name), 1; base, ext = os.path.splitext(name)
-                                while os.path.exists(b_path): b_path = os.path.join(b_dir, f"{base}.backup{cnt}{ext}"); cnt += 1
-                                with open(b_path, 'wb') as bf: bf.write(original_file_data)
+                                b_dir = os.path.join(os.path.dirname(path), 'backup')
+                                os.makedirs(b_dir, exist_ok=True)
+                                b_path, cnt = os.path.join(b_dir, name), 1
+                                base, ext = os.path.splitext(name)
+                                while os.path.exists(b_path):
+                                    b_path = os.path.join(b_dir, f"{base}.backup{cnt}{ext}")
+                                    cnt += 1
+                                with open(b_path, 'wb') as bf:
+                                    bf.write(original_file_data)
                                 self.log_message.emit("log_backup_saved", "info", [os.path.basename(b_path)])
-                            p_dir = os.path.join(os.path.dirname(path), 'patched'); os.makedirs(p_dir, exist_ok=True)
+
+                            if self.is_cancelled:
+                                was_cancelled = True
+                                cancelled_file_index = i
+                                self.log_message.emit("log_patching_cancelled", "warning", [])
+                                for remaining_info in self.files[i:]:
+                                    self.file_status_updated.emit(remaining_info['path'], 'warning', 'status_cancelled')
+                                break
+
+                            p_dir = os.path.join(os.path.dirname(path), 'patched')
+                            os.makedirs(p_dir, exist_ok=True)
                             i_path = os.path.join(p_dir, name)
+
                             if not patcher.save(i_path):
-                                e += 1; self.file_status_updated.emit(path, 'error', 'status_error'); self.progress_updated.emit(int((i + 1) / total * 100)); continue
+                                e += 1
+                                self.file_status_updated.emit(path, 'error', 'status_error')
+                                self.progress_updated.emit(int((i + 1) / total * 100))
+                                continue
+
                             if self.overwrite_var:
                                 try:
-                                    shutil.move(i_path, path); self.log_message.emit("log_original_replaced", "info", [])
-                                    if not os.listdir(p_dir): os.rmdir(p_dir)
+                                    shutil.move(i_path, path)
+                                    self.log_message.emit("log_original_replaced", "info", [])
+                                    if not os.listdir(p_dir):
+                                        os.rmdir(p_dir)
                                 except Exception as move_err:
-                                    self.log_message.emit("log_move_error", "error", [str(move_err)]); e += 1; self.file_status_updated.emit(path, 'error', 'status_error')
-                            s += 1; self.file_status_updated.emit(path, 'success', 'status_done')
+                                    self.log_message.emit("log_move_error", "error", [str(move_err)])
+                                    e += 1
+                                    self.file_status_updated.emit(path, 'error', 'status_error')
+                            
+                            s += 1
+                            self.file_status_updated.emit(path, 'success', 'status_done')
                         else:
-                            k += 1; self.file_status_updated.emit(path, 'warning', 'status_no_changes')
+                            k += 1
+                            self.file_status_updated.emit(path, 'warning', 'status_no_changes')
+
                 except Exception as err:
-                    self.log_message.emit("log_general_error", "error", [str(err)]); e += 1
+                    self.log_message.emit("log_general_error", "error", [str(err)])
+                    e += 1
                     self.file_status_updated.emit(path, 'error', 'status_error')
                 finally:
-                    if patcher: patcher.close()
-                self.progress_updated.emit(int((i + 1) / total * 100))
-        finally:
-            self.finished.emit((s, k, e), was_cancelled)
+                    if patcher:
+                        patcher.close()
 
+                self.progress_updated.emit(int((i + 1) / total * 100))
+
+        finally:
+            # ← НОВЕ: Обраховуємо залишені файли
+            remaining_files = total - cancelled_file_index if cancelled_file_index is not None else 0
+            # ← НОВЕ: Передаємо remaining_files у сигнал
+            self.finished.emit((s, k, e), was_cancelled, cancelled_file_index, self.total_files, remaining_files)
+        
 class ThreadManager(QObject):
     task_started = pyqtSignal(str); task_finished = pyqtSignal(str); error = pyqtSignal(str, str)
     def __init__(self, parent=None):
@@ -887,47 +975,167 @@ class PEPatcherGUI(QMainWindow):
             for item in self.file_items.values(): item.setEnabled(True)
 
     def start_patching(self):
-        if not self.files: QMessageBox.warning(self, self.translator.get("warning_title"), self.translator.get("warning_no_files")); return
-        apis = [key for key, checkbox in self.api_checks.items() if checkbox.isChecked()]
-        if self.all_apis.isChecked(): apis = list(DLL_REPLACEMENTS.keys())
-        if not apis: QMessageBox.warning(self, self.translator.get("warning_title"), self.translator.get("warning_no_api")); return
+        if not self.files: 
+            QMessageBox.warning(self, self.translator.get("warning_title"), self.translator.get("warning_no_files"))
+            return
         
-        self.set_ui_for_patching(True); self.progress.setValue(0)
-        worker = self.thread_manager.start_task(PatcherWorker, self.translator.get("task_patching_files"), list(self.files), apis, self.backup.isChecked(), self.overwrite.isChecked())
-        if not worker: self.set_ui_for_patching(False); return
-            
+        apis = [key for key, checkbox in self.api_checks.items() if checkbox.isChecked()]
+        if self.all_apis.isChecked(): 
+            apis = list(DLL_REPLACEMENTS.keys())
+        if not apis: 
+            QMessageBox.warning(self, self.translator.get("warning_title"), self.translator.get("warning_no_api"))
+            return
+        
+        self.set_ui_for_patching(True)
+        self.progress.setValue(0)
+        
+        worker = self.thread_manager.start_task(
+            PatcherWorker,
+            self.translator.get("task_patching_files"),
+            list(self.files),
+            apis,
+            self.backup.isChecked(),
+            self.overwrite.isChecked()
+        )
+        
+        if not worker:
+            self.set_ui_for_patching(False)
+            return
+        
         worker.log_message.connect(self.log)
         worker.progress_updated.connect(self.progress.setValue)
         worker.file_status_updated.connect(self.on_file_status_updated)
         worker.finished.connect(self.patching_done)
 
+
     def on_file_status_updated(self, path: str, status: str, text_key: str):
+        """
+        Оновлює статус файлу в UI.
+        
+        text_key може бути:
+        - 'status_done' → Success → НЕ анімуємо (видаляється в patching_done)
+        - 'status_skipped' → Skipped (оброблена) → НЕ анімуємо (видаляється в patching_done)
+        - 'status_cancelled' → Cancelled (скасована) → НЕ анімуємо (залишається в списку)
+        - 'status_no_changes' → No changes → НЕ анімуємо (видаляється в patching_done)
+        - 'status_error' → Error → НЕ анімуємо (залишається в списку)
+        """
         if widget := self.file_items.get(path):
             widget.update_status(status, self.translator.get(text_key))
-            if status in ['success', 'warning']:
-                QTimer.singleShot(1200, lambda: self.animate_card_removal(path))
+            
+            # ← НОВЕ: НЕ видаляємо файли під час обробки
+            # Вони будуть видалені в patching_done
+            # Це запобігає подвійному видаленню
 
-    def patching_done(self, stats: Tuple[int, int, int], was_cancelled: bool):
+    def patching_done(self, stats: Tuple[int, int, int], was_cancelled: bool, cancelled_file_index: int = None, total_files: int = None, remaining_files: int = None):
+        """
+        Обробляє завершення патчингу.
+        """
         s, k, e = stats
+        
+        if total_files is None:
+            total_files = cancelled_file_index + len(self.files) if cancelled_file_index else len(self.files)
+        
+        if remaining_files is None:
+            remaining_files = total_files - cancelled_file_index if cancelled_file_index is not None else 0
+        
+        # ================================================================
+        # PARTE 0: Скидаємо UI стан
+        # ================================================================
+        self.progress.setValue(0)
+        self.set_ui_for_patching(False)
+        
+        # ================================================================
+        # PARTE 1: Якщо було скасування - видаляємо обробленні файли
+        # ================================================================
+        if was_cancelled and cancelled_file_index is not None:
+            # ← ВАЖЛИВО: Видаляємо ВСІХ файлів від 0 до cancelled_file_index
+            # включаючи ті що мають статус 'cancelled'
+            paths_to_remove = [self.files[i]['path'] for i in range(cancelled_file_index)]
+            
+            for path in paths_to_remove:
+                if path in self.file_items:
+                    widget = self.file_items[path]
+                    # Видаляємо з layout
+                    self.files_layout.removeWidget(widget)
+                    widget.deleteLater()
+                    self.file_items.pop(path, None)
+            
+            # Оновлюємо список файлів (залишаємо тільки необроблені)
+            self.files = self.files[cancelled_file_index:]
+            
+            # Перевіряємо чи список пустий
+            if not self.files:
+                self.files_container.hide()
+                self.empty_state.show()
+            
+            # Оновлюємо статистику
+            self.update_stats()
+            
+            # Логуємо з правильною кількістю залишених файлів
+            self.log("log_patched_files_removed", "info", [cancelled_file_index, total_files, remaining_files])
+        else:
+            # Якщо не було скасування, але всі файли обробленні
+            if not was_cancelled:
+                for path in list(self.file_items.keys()):
+                    widget = self.file_items[path]
+                    self.files_layout.removeWidget(widget)
+                    widget.deleteLater()
+                    self.file_items.pop(path, None)
+                
+                self.files.clear()
+                self.files_container.hide()
+                self.empty_state.show()
+                self.update_stats()
+        
+        # ================================================================
+        # PARTE 2: Формуємо повідомлення про результати
+        # ================================================================
         summary_parts = []
-        if s > 0: summary_parts.append(self.translator.get("summary_patched", s))
-        if k > 0: summary_parts.append(self.translator.get("summary_skipped", k))
-        if e > 0: summary_parts.append(self.translator.get("summary_errors", e))
+        
+        if s > 0:
+            summary_parts.append(self.translator.get("summary_patched", s))
+        if k > 0:
+            summary_parts.append(self.translator.get("summary_skipped", k))
+        if e > 0:
+            summary_parts.append(self.translator.get("summary_errors", e))
         
         if was_cancelled:
             summary_text = self.translator.get("summary_cancelled_prefix") + ", ".join(summary_parts)
         else:
             summary_text = (self.translator.get("summary_finished_prefix") + ", ".join(summary_parts)) if summary_parts else self.translator.get("summary_no_ops")
-
+        
         level = "success" if e == 0 and s > 0 and not was_cancelled else "warning"
         self.log(summary_text, level, [])
-        self.progress.setValue(0)
-        self.set_ui_for_patching(False)
+        
+        # ================================================================
+        # PARTE 3: Показуємо діалог з затримкою
+        # ================================================================
         if not was_cancelled:
-            QMessageBox.information(self, self.translator.get("dialog_completed_title"), summary_text)
+            QMessageBox.information(
+                self,
+                self.translator.get("dialog_completed_title"),
+                summary_text
+            )
         else:
             self.log("log_operation_stopped", "info")
-
+            
+            def show_cancel_dialog():
+                if remaining_files > 0:
+                    cancel_message = self.translator.get("dialog_cancel_remaining", remaining_files)
+                    QMessageBox.information(
+                        self,
+                        self.translator.get("dialog_cancelled_title"),
+                        cancel_message
+                    )
+                else:
+                    QMessageBox.information(
+                        self,
+                        self.translator.get("dialog_cancelled_title"),
+                        "Патчинг скасовано. Список файлів очищено."
+                    )
+            
+            QTimer.singleShot(500, show_cancel_dialog)
+        
     def show_about(self):
         dialog = AboutDialog(self, self.translator)
         dialog.exec()
