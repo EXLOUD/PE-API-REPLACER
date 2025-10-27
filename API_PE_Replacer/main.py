@@ -514,63 +514,87 @@ class ThreadManager(QObject):
 class LanguageDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Вибір мови / Language Selection")
-        self.setMinimumWidth(350)
-        self.language = "uk" # Default
+        self.setWindowTitle("Language Selection")
+        self.setMinimumWidth(400)
+        self.setMinimumHeight(300)
+        self.language = "en"  # Default
         
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(24, 24, 24, 24)
         main_layout.setSpacing(20)
 
-        title_label = QLabel("Оберіть мову / Select Language")
+        title_label = QLabel("Select Language")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setProperty("class", "h3")
         main_layout.addWidget(title_label)
         
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        scroll_area.setStyleSheet("background: transparent;")
-        
-        button_container = QWidget()
-        buttons_layout = QVBoxLayout(button_container)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(8)
-
+        # ← НОВЕ: Перевіряємо чи існує папка languages
         lang_path = resource_path(LANG_FOLDER)
-        if not os.path.exists(lang_path): os.makedirs(lang_path)
+        lang_files = glob.glob(os.path.join(lang_path, "lang_*.xml")) if os.path.exists(lang_path) else []
+        
+        if not lang_files:
+            # ← НОВЕ: Папки нема або в ній немає мовних файлів
+            error_label = QLabel(
+                "⚠️ Language files not found!\n\n"
+                "Please ensure the 'languages' folder exists with translation files:\n"
+                "- languages/lang_en.xml\n\n"
+                "Copy the language files from the application directory and try again."
+            )
+            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            error_label.setWordWrap(True)
+            error_label.setStyleSheet(f"color: {REFINED_PALETTE['warning']}; font-size: 12px;")
+            main_layout.addWidget(error_label, 1)
             
-        lang_files = glob.glob(os.path.join(lang_path, "lang_*.xml"))
-        available_languages = {}
-        for f in lang_files:
-            lang_code = os.path.basename(f).split('_')[1].split('.')[0]
-            lang_name = get_language_name_from_xml(f)
-            available_languages[lang_code] = lang_name
+            # Кнопка для закриття
+            close_btn = QPushButton("Exit")
+            close_btn.setStyleSheet(STANDARD_BUTTON_STYLE)
+            close_btn.clicked.connect(self.reject)
+            btn_layout = QHBoxLayout()
+            btn_layout.addStretch()
+            btn_layout.addWidget(close_btn)
+            btn_layout.addStretch()
+            main_layout.addLayout(btn_layout)
+        else:
+            # ← НОВЕ: Мови знайдені - показуємо їх як раніше
+            scroll_area = QScrollArea()
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+            scroll_area.setStyleSheet("background: transparent;")
+            
+            button_container = QWidget()
+            buttons_layout = QVBoxLayout(button_container)
+            buttons_layout.setContentsMargins(0, 0, 0, 0)
+            buttons_layout.setSpacing(8)
 
-        if not available_languages:
-            available_languages = {'uk': 'Українська', 'en': 'English'}
+            available_languages = {}
+            for f in lang_files:
+                lang_code = os.path.basename(f).split('_')[1].split('.')[0]
+                lang_name = get_language_name_from_xml(f)
+                available_languages[lang_code] = lang_name
 
-        for code, name in sorted(available_languages.items()):
-            btn = QPushButton(name)
-            btn.setStyleSheet(STANDARD_BUTTON_STYLE)
-            btn.clicked.connect(lambda _, c=code: self.set_language(c))
-            buttons_layout.addWidget(btn)
-        
-        buttons_layout.addStretch()
-        button_container.setLayout(buttons_layout)
-        scroll_area.setWidget(button_container)
-        main_layout.addWidget(scroll_area)
-        
-        self.show_again_checkbox = QCheckBox("Показувати щоразу / Show every time")
-        self.show_again_checkbox.setChecked(True)
-        main_layout.addWidget(self.show_again_checkbox)
+            for code, name in sorted(available_languages.items()):
+                btn = QPushButton(name)
+                btn.setStyleSheet(STANDARD_BUTTON_STYLE)
+                btn.clicked.connect(lambda _, c=code: self.set_language(c))
+                buttons_layout.addWidget(btn)
+            
+            buttons_layout.addStretch()
+            button_container.setLayout(buttons_layout)
+            scroll_area.setWidget(button_container)
+            main_layout.addWidget(scroll_area)
+            
+            self.show_again_checkbox = QCheckBox("Show every time")
+            self.show_again_checkbox.setChecked(True)
+            main_layout.addWidget(self.show_again_checkbox)
 
     def set_language(self, lang_code):
         self.language = lang_code
         self.accept()
 
     def get_selection(self):
-        return self.language, self.show_again_checkbox.isChecked()
+        if hasattr(self, 'show_again_checkbox'):
+            return self.language, self.show_again_checkbox.isChecked()
+        return self.language, False
 
 
 class RefinedContainer(QWidget):
