@@ -55,7 +55,7 @@ DONATION_ADDRESSES = {
 # 0. ГЛОБАЛЬНІ КОНФІГУРАЦІЇ
 # =============================================================================
 
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.9b"
 LANG_FOLDER = "languages"
 
 def sanitize_filename(filename: str) -> str:
@@ -159,35 +159,65 @@ class TranslationManager:
     def __init__(self, lang_code='en'):
         self.translations = {}
         self.load_language(lang_code)
+    
     def load_language(self, lang_code):
-        filepath = resource_path(os.path.join(LANG_FOLDER, f"lang_{lang_code}.xml"))
-        if not os.path.exists(filepath):
-            print(f"Warning: Translation file not found: {filepath}")
-            self.translations = {}; return
-        try:
-            tree = ET.parse(filepath); root = tree.getroot()
-            for string_tag in root.findall('string'):
-                key = string_tag.get('name'); value = string_tag.text
-                if key and value: self.translations[key] = value
-        except Exception as e:
-            print(f"Error loading translation file {filepath}: {e}")
+        lang_path = resource_path(LANG_FOLDER)
+        
+        # ← НОВЕ: Перевіряємо чи папка існує
+        if not os.path.exists(lang_path):
+            print(f"⚠️ Warning: Languages folder not found: {lang_path}")
             self.translations = {}
+            return
+        
+        filepath = os.path.join(lang_path, f"lang_{lang_code}.xml")
+        
+        # ← НОВЕ: Перевіряємо чи файл існує
+        if not os.path.exists(filepath):
+            print(f"⚠️ Warning: Translation file not found: {filepath}")
+            self.translations = {}
+            return
+        
+        try:
+            tree = ET.parse(filepath)
+            root = tree.getroot()
+            for string_tag in root.findall('string'):
+                key = string_tag.get('name')
+                value = string_tag.text
+                if key and value:
+                    self.translations[key] = value
+        except Exception as e:
+            print(f"❌ Error loading translation file {filepath}: {e}")
+            self.translations = {}
+    
     def get(self, key, *args):
         template = self.translations.get(key, key)
-        try: return template.format(*args)
-        except (IndexError, TypeError): return template
+        try:
+            return template.format(*args)
+        except (IndexError, TypeError):
+            return template
 
-def get_settings_path(): return os.path.join(get_base_path(), "settings.ini")
+def get_settings_path():
+    return os.path.join(get_base_path(), "settings.ini")
+
 def load_settings():
-    path = get_settings_path(); config = ConfigParser()
+    path = get_settings_path()
+    config = ConfigParser()
     if os.path.exists(path):
         config.read(path, encoding='utf-8')
-        return config.get("Settings", "language", fallback="uk"), config.getboolean("Settings", "show_dialog", fallback=True)
-    return "uk", True
+        return (
+            config.get("Settings", "language", fallback="en"),
+            config.getboolean("Settings", "show_dialog", fallback=True)
+        )
+    return "en", True
+
 def save_settings(lang, show_dialog):
-    path = get_settings_path(); config = ConfigParser()
-    config.add_section("Settings"); config.set("Settings", "language", lang); config.set("Settings", "show_dialog", str(show_dialog))
-    with open(path, 'w', encoding='utf-8') as f: config.write(f)
+    path = get_settings_path()
+    config = ConfigParser()
+    config.add_section("Settings")
+    config.set("Settings", "language", lang)
+    config.set("Settings", "show_dialog", str(show_dialog))
+    with open(path, 'w', encoding='utf-8') as f:
+        config.write(f)
 
 def get_language_name_from_xml(filepath: str) -> str:
     try:
@@ -199,7 +229,10 @@ def get_language_name_from_xml(filepath: str) -> str:
     except Exception:
         pass
     basename = os.path.basename(filepath)
-    return basename.split('_')[1].split('.')[0]
+    try:
+        return basename.split('_')[1].split('.')[0]
+    except IndexError:
+        return basename
 
 # =============================================================================
 # 3. БЕКЕНД ЛОГІКА (без змін)
