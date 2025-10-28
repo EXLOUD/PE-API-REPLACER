@@ -48,50 +48,352 @@
 
 ---
 
-## 🎯 Features Overview
+## 🎯 Project Overview
 
-| Feature | Description |
-|---------|-------------|
-| **Batch Processing** | Handle multiple files simultaneously with progress tracking |
-| **IAT Patching** | Direct modification of Import Address Tables in PE structures |
-| **Hex Patching** | Binary search and replace for deep file modifications |
-| **Recursive Scanning** | Automatically find PE files in nested directories |
-| **Auto Backup** | Preserve originals before any modifications |
-| **Real-time Logs** | Complete operation history for debugging |
-| **Modern GUI** | Dark theme with smooth animations and intuitive layout |
-| **Flexible Config** | Define custom API replacements easily |
-| **Custom API Emulators** | Native C libraries compiled with llvm-mingw for high performance |
+**PE API Replacer** is a professional desktop application built on PyQt6 that performs binary patching of PE files (Portable Executable). The tool replaces calls to Windows API DLLs (for example, `winhttp.dll`, `wininet.dll`) with alternative DLLs (for example, `exhttp.dll`, `exinet.dll`) through modification of binary file data.
+
+### 🎯 Main Goal
+Provide a simple and secure method for batch redirecting API calls in executable files without requiring recompilation or detailed knowledge of PE internal structure.
 
 ---
 
-## 📋 System Requirements
+## 🗂️ Project Architecture
 
-- **OS:** Windows, macOS, or Linux
-- **Python:** 3.10 or higher
-- **Permissions:** Standard user (auto-elevates on Windows)
-- **Native Libraries:** MinGW x64 runtime (included in package)
+### Three-Layer Design
+
+```
+┌──────────────────────────────────────────┐
+│     UI Layer (PyQt6)                │  ← User Interface
+├──────────────────────────────────────────┤
+│  Business Logic (Threading Workers) │  ← Asynchronous Processing
+├──────────────────────────────────────────┤
+│  Binary I/O (pefile + OS)           │  ← File Operations
+└──────────────────────────────────────────┘
+```
+
+### Main Components
+
+#### **1. Configuration Module** (`config.py`)
+Defines API replacement pairs in the `DLL_REPLACEMENTS` dictionary. Contains 10 groups of Windows APIs with their replacements.
+
+**Critical Feature:** String length for binary replacement in PE format must exactly match the original. For padding, null bytes `\x00` are used.
+
+**Configuration Example:**
+```python
+DLL_REPLACEMENTS = {
+    1: {'name': 'WINHTTP', 'replacements': {
+        b'winhttp.dll': b'exhttp.dll\x00',  # 11 bytes + 1 null = 12 bytes
+    }},
+    5: {'name': 'IPHLPAPI', 'replacements': {
+        b'iphlpapi.dll': b'exiphl.dll\x00\x00',  # 12 bytes = 12 bytes
+    }},
+}
+```
+
+#### **2. Patching Core** 
+- **`UniversalPEPatcher`** — Main class for modifications:
+  - Loads PE files using the `pefile` library
+  - Identifies patch locations in Import Address Table (IAT) and raw data
+  - Performs binary replacements with length verification
+  - Saves modified files while preserving PE structure
+
+#### **3. Multithreading System**
+```
+ThreadManager (coordinator)
+    ├─ PatcherWorker (main file processing)
+    ├─ FileProcessorWorker (file analysis)
+    ├─ FolderScannerWorker (folder scanning)
+    └─ QThread (background thread)
+```
+
+**Signal-Slot System:**
+- `log_signal` — Transmit log messages with color codes
+- `file_processed` — Update file information in UI
+- `progress_updated` — Update progress bar
+- `finished` — Signal task completion
+- `file_status_updated` — Change current file status
+
+#### **4. UI Framework**
+- **Refined Material Design** — Custom dark theme with violet accents
+- **Splitter-based Layout:**
+  - Left panel — File list with swipe-to-delete
+  - Right panel — Settings + logs
+- **Animated Components:**
+  - File element swipe-to-delete
+  - Deletion animation
+  - Smooth state transitions
 
 ---
 
-## 🛠️ Technology Stack
+## 📄 Binary Patching Process
+
+### Step 1: File Loading
+```python
+# Read file as bytearray for modification
+with open(file_path, 'rb') as f:
+    data = bytearray(f.read())
+
+# Parse PE structure for analysis
+pe = pefile.PE(data=data)
+```
+
+### Step 2: Finding Patchable Locations
+**`check_if_patchable()` method:**
+- Scans Import Directory Entry for matching DLL names
+- Searches for binary sequences in file body
+- Counts total replacements to perform
+
+**Result:**
+```
+[IAT] winhttp.dll (1 occurrence)
+[HEX] winhttp.dll (3 occurrences)
+Total: 4 patchable locations
+```
+
+### Step 3: Performing Patching
+**`patch_all()` method:**
+
+**IAT Patching** (import table):
+```python
+# Find import entry for winhttp.dll
+offset = pe.get_offset_from_rva(entry.struct.Name)
+# Replace with exhttp.dll\x00 (14 bytes = 14 bytes)
+data[offset:offset+14] = b'exhttp.dll\x00'
+```
+
+**Hex Patching** (raw data):
+```python
+# Search for b'winhttp.dll' in entire file
+# Replace with b'exhttp.dll\x00' at each found location
+# ⚠️ Only if lengths match!
+```
+
+### Step 4: File Saving
+```python
+# Use pefile for proper structure preservation
+pe_patched = pefile.PE(data=modified_data)
+pe_patched.write(output_path)
+```
+
+---
+
+## 💾 Backup Strategy
+
+```
+Original.exe (original location)
+    ↓ (backup copy)
+backup/Original.backup1.exe
+    ↓ (patching)
+patched/Original.exe
+    ↓ (optional: overwrite)
+Original.exe (replaces original)
+```
+
+**Processing Flow:**
+1. If `backup=True` — copy created in `backup/` folder
+2. Patching performed in `patched/` folder
+3. If `overwrite=True` — patched file replaces original
+4. If both options enabled — protection duplicated
+
+---
+
+## 🌍 Localization System
+
+### Translation Architecture
+
+```
+config.py / main.py
+    ↓
+TranslationManager
+    ↓
+load_language('en')
+    ↓
+lang_en.xml
+    ↓
+QWidget.setText(translator.get('key'))
+```
+
+### XML Translation Format (`lang_en.xml`)
+
+```xml
+<resources>
+    <string name="app_title">PE API Replacer</string>
+    <string name="log_processing_file">Processing: {0} {1}</string>
+    <string name="summary_patched">{0} patched</string>
+</resources>
+```
+
+### Parameterized Strings
+
+```python
+# Template with placeholders
+template = "Found {0} files in {1} seconds"
+
+# Parameter transmission
+translator.get('found_files', 25, "10")
+# → "Found 25 files in 10 seconds"
+```
+
+### Settings Persistence (`settings.ini`)
+
+```ini
+[Settings]
+language = uk
+show_dialog = False
+```
+
+---
+
+## 🎨 UI/UX Features
+
+### 1. Swipeable File Elements
+
+```
+File normalization.exe
+───────────────────────────────────────────────
+[Info] Ready              [Remove]
+───────────────────────────────────────────────
+                      👈 Drag left to delete
+```
+
+**Animation:**
+- Swipe left → show delete icon (🗑️)
+- Release → slide-out animation (300ms)
+- Height reduction (250ms)
+- Remove from UI
+
+### 2. Folder Scanner with Dialog
+
+**Functionality:**
+- Recursively scans folder for PE files
+- Automatically skips `patched/` and `backup/` folders
+- Shows progress in real-time
+- Allows cancellation of scan
+- Lists skipped folders with reasons
+
+**Supported Extensions:**
+`.exe`, `.dll`, `.vst3`, `.vst`, `.sys`, `.ocx`, `.ax`
+
+### 3. Color-Coded Logs
+
+```
+14:32:15 ℹ️  Started PE API Replacer v1.0.9
+14:32:16 📄 Processing: [1/5] app.exe
+14:32:18 ✅ [IAT] winhttp.dll → exhttp.dll
+14:32:19 ✅ [HEX] winhttp.dll → exhttp.dll (3x)
+14:32:20 ✅ Total: 4 changes
+14:32:22 💾 Saved: patched/app.exe
+14:32:25 ✅ Finished: 1 patched, 0 skipped, 0 with errors
+```
+
+**Color Semantics:**
+- Gray — Time and metadata
+- Blue — General information
+- Green (✅) — Success
+- Yellow (⚠️) — Warning
+- Red (❌) — Error
+
+### 4. About Program Dialog
+
+- Shows version, author, GitHub link
+- **Donation Addresses for Copy:**
+  - Bitcoin, Ethereum, Monero, TON
+  - USDT (TRC20, ERC20), USDC, Tron, BNB
+- One-click copy to clipboard
+
+---
+
+## 🚀 General Patching Process
+
+### User Flow Until Completion
+
+```
+1️⃣ User clicks "Start Patching"
+    ↓
+2️⃣ UI collects selected APIs (getChecked())
+    ↓
+3️⃣ Build active_replacements dictionary
+    ↓
+4️⃣ PatcherWorker launched in background thread
+    ↓
+5️⃣ For each file:
+    ├─ PermissionsManager: check/modify permissions
+    ├─ UniversalPEPatcher: load file
+    ├─ check_if_patchable(): verify possibility
+    ├─ patch_all(): perform replacements
+    ├─ Save to backup/ (if enabled)
+    ├─ Save to patched/
+    ├─ Move to original (if overwrite=True)
+    ├─ Emit file_status_updated
+    └─ Emit progress_updated
+    ↓
+6️⃣ patching_done signal
+    ↓
+7️⃣ Clear UI, show summary
+```
+
+### Cancellation Handling
+
+```
+User clicks Cancel
+    ↓
+is_cancelled = True
+    ↓
+Current file finishes
+    ↓
+For all remaining files: status = 'cancelled'
+    ↓
+Remove processed files from list
+    ↓
+Show count of remaining files
+    ↓
+Allow user to continue patching
+```
+
+---
+
+## 📊 Supported API Table
+
+| # | Name | Original | Replacement |
+|---|------|----------|-------------|
+| 1 | WINHTTP | `winhttp.dll` | `exhttp.dll\x00` |
+| 2 | WININET | `wininet.dll` | `exinet.dll\x00` |
+| 3 | WS2_32 | `ws2_32.dll` | `exws2.dll\x00` |
+| 4 | SENSAPI | `sensapi.dll` | `exsens.dll\x00` |
+| 5 | IPHLPAPI | `iphlpapi.dll` | `exiphl.dll\x00\x00` |
+| 6 | URLMON | `urlmon.dll` | `exurlm.dll` |
+| 7 | NETAPI32 | `netapi32.dll` | `exnetapi.dll` |
+| 8 | WSOCK32 | `wsock32.dll` | `exws.dll\x00\x00\x00` |
+| 9 | WINTRUST | `wintrust.dll` | `extrust.dll\x00` |
+| 10 | MSWSOCK | `mswsock.dll` | `exmsw.dll\x00\x00` |
+
+**Note:** All replacements have null bytes for exact length correspondence.
+
+---
+
+## 🛠️ Technical Stack
 
 ### Frontend & Core
-- **Python 3.10+** - Main application logic
-- **PyQt6** - Modern cross-platform GUI framework
+- **Python 3.10+** — Main application logic
+- **PyQt6** — Cross-platform GUI framework
 
 ### Native API Emulators
-- **C/C++** - High-performance network interceptor libraries
-- **llvm-mingw 21.1.3** with LLVM 21.1.3 - Compiler toolchain
-  - Download: [llvm-mingw releases](https://github.com/mstorsjo/llvm-mingw/releases)
-  - Target: x86_64-w64-mingw32 (64-bit Windows)
+- **C/C++** — High-performance substitute libraries
+- **llvm-mingw 21.1.3** — Compiler for Windows PE
+  - Clang/LLVM 21.1.3
+  - MinGW-w64 runtime
+  - Full Windows API support
+  - Optimization for x64 binary generation
 
-### Compilation Details
-```bash
-# llvm-mingw 20251007 provides:
-- Clang/LLVM 21.1.3
-- MinGW-w64 runtime
-- Full Windows API support
-- Optimized for native PE binary generation
+### Dependency Stack
+```
+requirements:
+  - PyQt6 ≥ 6.0
+  - pefile ≥ 2022.8.7
+  - Python ≥ 3.10
+
+optional (for development):
+  - llvm-mingw 21.1.3 (C compiler for binary generation)
 ```
 
 ---
@@ -101,243 +403,39 @@
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/pe-api-replacer.git
-cd pe-api-replacer
+# Cloning
+git clone https://github.com/EXLOUD/PE-API-REPLACER.git
+cd PE-API-REPLACER
 
-# Install dependencies
+# Installing dependencies
 pip install PyQt6 pefile
 ```
 
-### Usage
+### Launch
 
 ```bash
-python api_patcher_qt6.py
+python main.py
 ```
 
-Then:
+### Basic Working Process
+
 1. Click "Add Files" or "Add Folder"
-2. Select APIs to replace
-3. Configure backup/overwrite options
+2. Select APIs for replacement (checkboxes)
+3. Adjust options (backup copy, overwrite)
 4. Click "Start Patching"
+5. Wait for completion
 
 ---
 
-## 📁 Project Structure
+## 📜 Licensing
 
-```
-📂 pe-api-replacer/
-├── 📄 api_patcher_qt6.py          # Main GUI application (Python/PyQt6)
-├── 📄 config.py                   # API configuration
-├── 📂 api/                        # Native API emulator libraries
-│   ├── 📄 winhttp_replacement.dll # Compiled with llvm-mingw 21.1.3
-│   ├── 📄 wininet_replacement.dll # Compiled with llvm-mingw 21.1.3
-│   └── 📄 ...                     # Additional C/C++ emulators
-├── 📂 src/                        # C/C++ source files
-│   ├── 📄 winhttp_replacement.c
-│   ├── 📄 wininet_replacement.c
-│   └── 📄 Makefile                # Build with llvm-mingw
-├── 📂 assets/
-│   └── 📄 preview.gif             # Demo screenshot
-├── 📄 README.md
-├── 📄 README-UK.md
-└── 📄 LICENSE
-```
+**GNU General Public License v3.0 (GPL-3.0)**
 
----
-
-## ⚙️ Configuration
-
-Edit `config.py` to define your API replacements:
-
-```python
-DLL_REPLACEMENTS = {
-    1: {'name': 'WINHTTP', 'replacements': {
-        b'WINHTTP.DLL': b'MYHTTP.DLL\x00',
-        b'WINHTTP.dll': b'MYHTTP.dll\x00',
-    }},
-    2: {'name': 'WININET', 'replacements': {
-        b'WININET.DLL': b'MYINET.DLL\x00',
-        b'WININET.dll': b'MYINET.dll\x00',
-    }},
-}
-```
-
-**Important:** Replacement length must equal original length. Pad with `\x00` if needed.
-
----
-
-## 🔧 How It Works
-
-### 1. IAT Modification (Python/PyQt6)
-Directly edits the Import Address Table in the PE file header to redirect DLL imports.
-
-### 2. Hex Patching (Python/PyQt6)
-Scans binary content for DLL name sequences and replaces them throughout the file.
-
-### 3. Native API Emulation (C/llvm-mingw)
-Replacement DLL emulators provide drop-in replacements for system APIs with custom behavior:
-- Compiled with **llvm-mingw 21.1.3 (LLVM 21.1.3)**
-- Native x64 Windows binaries
-- Transparent API interception
-- Full Windows API compatibility
-
-### 4. Multi-threaded Processing (Python)
-Operations run asynchronously, keeping the GUI responsive during heavy workloads.
-
-### 5. Safety Features (Python)
-- Automatic backups in `backup/` folder
-- Windows permission elevation
-- Detailed operation logging
-- Checksum recalculation
-
----
-
-## 📊 Supported APIs (Default)
-
-- ✅ WINHTTP
-- ✅ WININET
-- ✅ WS2_32
-- ✅ SENSAPI
-- ✅ IPHLPAPI
-- ✅ URLMON
-- ✅ NETAPI32
-- ✅ WSOCK32
-- ✅ WINTRUST
-
-*Easily extensible – add custom APIs to `config.py` and compile emulators with llvm-mingw*
-
----
-
-## 💡 Use Cases
-
-### Replace Standard Libraries with Custom Versions
-```python
-b'WINHTTP.DLL': b'CUSTOM.DLL\x00'
-```
-
-### Network Traffic Interception (C Emulator)
-```python
-b'WININET.DLL': b'PROXY.DLL\x00\x00\x00'
-# Native proxy emulator compiled with llvm-mingw intercepts calls
-```
-
-### DirectX Version Swapping
-Add to `config.py`:
-```python
-b'D3D9.DLL': b'D3D9_EX.DLL\x00'
-```
-
----
-
-## 🔨 Building Native Libraries (Developers)
-
-### Prerequisites
-1. Download **llvm-mingw 20251007** from [mstorsjo/llvm-mingw releases](https://github.com/mstorsjo/llvm-mingw/releases)
-2. Extract and add to PATH
-3. Ensure `clang`, `clang++`, and `x86_64-w64-mingw32-gcc` are available
-
-### Build Commands
-
-```bash
-# Navigate to source directory
-cd src/
-
-# Build individual emulator
-x86_64-w64-mingw32-gcc -shared -O3 -o winhttp_replacement.dll winhttp_replacement.c
-
-# Or use provided Makefile
-make all
-
-# Place compiled DLLs in api/ directory
-mv *.dll ../api/
-```
-
-### Makefile Example
-```makefile
-CC = x86_64-w64-mingw32-gcc
-CFLAGS = -shared -fPIC -O3 -Wall
-TARGET = api/
-
-all: winhttp_replacement.dll wininet_replacement.dll
-
-winhttp_replacement.dll: src/winhttp_replacement.c
-	$(CC) $(CFLAGS) -o $(TARGET)$@ $<
-
-wininet_replacement.dll: src/wininet_replacement.c
-	$(CC) $(CFLAGS) -o $(TARGET)$@ $<
-
-clean:
-	rm -f $(TARGET)*.dll
-```
-
----
-
-## ⚠️ Important Notes
-
-- **Backup First:** Always create system restore points before patching
-- **Test Before Production:** Use virtual machines for initial testing
-- **Update Awareness:** Some settings may reset after Windows updates
-- **Signature Impact:** Patching may invalidate digital signatures
-- **Native Library Compatibility:** Ensure emulator DLLs are compiled for target architecture
-
----
-
-## 🔄 Restoring Original Files
-
-If patching causes issues:
-
-1. Restore from `backup/` folder
-2. Use system restore point (if created)
-3. Manually restore from clean installation
-
----
-
-## 🐛 Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| ModuleNotFoundError | Run `pip install PyQt6 pefile` |
-| "No files found" | Ensure PE files exist with correct format |
-| Permission denied | Run with admin privileges on Windows |
-| UI frozen | Wait for patching to complete (progress bar shows status) |
-| Native DLL not found | Verify emulator DLLs in `api/` folder and recompile with llvm-mingw if needed |
-| "Entry point not found" | Ensure DLL was compiled with compatible architecture (x64) |
-
----
-
-## 📜 License
-
-This project is licensed under the GNU General Public License v3.0 (GPL-3.0)
-
-```
-PE API Replacer - Professional GUI tool for replacing API imports in PE files
-Copyright (c) 2025 PE API Replacer Contributors
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-```
-
-### What this means:
-
-- ✅ You can use, modify, and distribute this software
-- ✅ You can use it commercially
-- ⚠️ Any modified versions must also be GPL 3
-- ⚠️ You must provide source code to users
-- ⚠️ You must include the GPL 3 license text
-- ⚠️ You must credit the original authors
-
-See [LICENSE](LICENSE) for full text.
+✅ Can be used, modified, distributed  
+✅ Can be used commercially  
+⚠️ Modified versions must also be GPL-3  
+⚠️ Must provide source code to users  
+⚠️ Must include full GPL-3 license text  
 
 ---
 
@@ -346,49 +444,32 @@ See [LICENSE](LICENSE) for full text.
 Contributions are welcome! Please:
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
+2. Create a feature branch
+3. Make commits
+4. Submit to a branch
 5. Open a Pull Request
 
-For native library contributions, ensure compilation with **llvm-mingw 21.1.3**.
+For C/C++ contributions — compile with **llvm-mingw 21.1.3**.
 
 ---
 
-## 📞 Support & Feedback
+## 📊 Project Statistics
 
-- **Report Bugs:** [Create an Issue](https://github.com/yourusername/pe-api-replacer/issues)
-- **Feature Requests:** Use Issues with `[FEATURE]` tag
-- **Discussions:** Check existing discussions first
-
----
-
-## 🔗 Related Resources
-
-- [pefile Documentation](https://github.com/erocarrera/pefile)
-- [PE File Format](https://en.wikipedia.org/wiki/Portable_Executable)
-- [PyQt6 Documentation](https://www.riverbankcomputing.com/static/Docs/PyQt6/)
-- [llvm-mingw Releases](https://github.com/mstorsjo/llvm-mingw/releases)
-- [Reverse Engineering Resources](https://www.reverseengineering.com/)
+- **Version:** 1.0.9
+- **Status:** ✅ Stable
+- **Dependencies:** Python 3.10+, PyQt6, pefile
+- **License:** GPL-3.0
+- **OS:** Windows, macOS, Linux
+- **Architecture:** 64-bit PE files
 
 ---
 
-## 👨‍💻 Author
+## 🎓 Conclusion
 
-**PE API Replacer Development Team**
-
-- GitHub: [EXLOUD](https://github.com/EXLOUD)
-- Issues & Support: [GitHub Issues](https://github.com/EXLOUD/pe-api-replacer/issues)
-
----
+**PE API Replacer** is a production-ready tool for binary patching with complete error handling, localization, professional UX design, and extended architecture.
 
 <div align="center">
 
-**Version:** 1.0.9
-**Last Updated:** 2025  
-**Status:** ✅ Stable  
-**Built with:** Python 3.10+, PyQt6, C/llvm-mingw 21.1.3
-
-**[⬆ Back to Top](#pe-api-replacer)**
+**[↑ Back to Top](#pe-api-replacer)**
 
 </div>
