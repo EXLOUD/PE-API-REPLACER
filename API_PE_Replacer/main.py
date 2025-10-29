@@ -687,8 +687,6 @@ class SwipeableFileItem(QWidget):
         self.status_label.setText(text); colors = {'success': REFINED_PALETTE['success'], 'warning': REFINED_PALETTE['warning'], 'error': REFINED_PALETTE['error'], 'ready': REFINED_PALETTE['text_muted']}
         self.status_label.setStyleSheet(f"color: {colors.get(status, colors['ready'])};")
 
-# Оновлений клас RefinedFolderDialog:
-
 class RefinedFolderDialog(QDialog):
     files_changed = pyqtSignal()  # Сигнал для оновлення UI
     
@@ -1385,16 +1383,25 @@ class PEPatcherGUI(QMainWindow):
         else: self.start_patching()
 
     def set_ui_for_patching(self, is_patching: bool):
+        """Деактивує/активує UI під час патчингу"""
         if is_patching:
+            # Під час патчингу - деактивуємо кнопки
             self.main_action_btn.setText(self.translator.get("cancel"))
             self.main_action_btn.setEnabled(True)
             self.clear_btn.setEnabled(False)
-            for item in self.file_items.values(): item.setEnabled(False)
+            self.add_files_btn.setEnabled(False)
+            self.add_folder_btn.setEnabled(False)
+            for item in self.file_items.values():
+                item.setEnabled(False)
         else:
+            # Після патчингу - активуємо кнопки назад
             self.main_action_btn.setText(self.translator.get("start_patching"))
             self.main_action_btn.setEnabled(True)
             self.clear_btn.setEnabled(True)
-            for item in self.file_items.values(): item.setEnabled(True)
+            self.add_files_btn.setEnabled(True)
+            self.add_folder_btn.setEnabled(True)
+            for item in self.file_items.values():
+                item.setEnabled(True)
 
     def start_patching(self):
         if not self.files: 
