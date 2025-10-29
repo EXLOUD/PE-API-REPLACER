@@ -3,7 +3,7 @@
 ### 👇
 
   <p>
-    <a href="https://github.com/EXLOUD/PE-API-REPLACER/releases/download/v1.0.9/PE-API-REPLACER_v1.0.9.zip">
+    <a href="https://github.com/EXLOUD/PE-API-REPLACER/releases/download/v1.0.10/PE-API-REPLACER_v1.0.10.zip">
       <img src="https://img.shields.io/badge/Download_PE_API_Replacer-darkgreen?style=for-the-badge&logo=download&logoColor=white">
     </a>
   </p>
@@ -455,7 +455,7 @@ For C/C++ contributions — compile with **llvm-mingw 21.1.3**.
 
 ## 📊 Project Statistics
 
-- **Version:** 1.0.9
+- **Version:** 1.0.10
 - **Status:** ✅ Stable
 - **Dependencies:** Python 3.10+, PyQt6, pefile
 - **License:** GPL-3.0
