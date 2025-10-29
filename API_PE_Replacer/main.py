@@ -55,7 +55,7 @@ DONATION_ADDRESSES = {
 # 0. ГЛОБАЛЬНІ КОНФІГУРАЦІЇ
 # =============================================================================
 
-APP_VERSION = "1.0.9b"
+APP_VERSION = "1.0.10"
 LANG_FOLDER = "languages"
 
 def sanitize_filename(filename: str) -> str:
@@ -687,56 +687,421 @@ class SwipeableFileItem(QWidget):
         self.status_label.setText(text); colors = {'success': REFINED_PALETTE['success'], 'warning': REFINED_PALETTE['warning'], 'error': REFINED_PALETTE['error'], 'ready': REFINED_PALETTE['text_muted']}
         self.status_label.setStyleSheet(f"color: {colors.get(status, colors['ready'])};")
 
+# Оновлений клас RefinedFolderDialog:
+
 class RefinedFolderDialog(QDialog):
+    files_changed = pyqtSignal()  # Сигнал для оновлення UI
+    
+    def update_display(self):
+        """Оновлює відображення після видалення файлу"""
+        file_count = len(self.found_files)
+        
+        if file_count == 0:
+            # Немає файлів - показуємо empty state всередину контейнера
+            self.scroll_area.hide()
+            self.empty_state_internal.show()
+            self.status_label.setText(self.translator.get("files_not_added"))
+        else:
+            # Є файли - показуємо scroll area
+            self.empty_state_internal.hide()
+            self.scroll_area.show()
+            self.status_label.setText(self.translator.get("found_n_files", file_count))
+        
+        # Оновлюємо кнопку
+        self.update_buttons(is_scanning=False, found_count=file_count)
+    
     def __init__(self, parent, folder_path, include_subfolders):
-        super().__init__(parent); self.found_files, self.is_closing = [], False; self.translator = parent.translator
-        self.setWindowTitle(self.translator.get("scan_folder_title")); self.setFixedSize(600, 500); self.setModal(True)
-        layout = QVBoxLayout(self); layout.setContentsMargins(24, 24, 24, 24); layout.setSpacing(20)
-        header = QLabel(self.translator.get("scan_folder_title")); header.setProperty("class", "h3"); layout.addWidget(header)
-        path_label = QLabel(folder_path if len(folder_path) <= 60 else "..." + folder_path[-57:]); path_label.setProperty("class", "mono"); layout.addWidget(path_label)
-        self.status_label = QLabel(self.translator.get("scanning_status_searching")); layout.addWidget(self.status_label)
-        self.progress_bar = QProgressBar(); self.progress_bar.setRange(0, 0); self.progress_bar.setTextVisible(False); layout.addWidget(self.progress_bar)
-        self.files_list = QListWidget(); layout.addWidget(self.files_list, 1)
-        self.info_container = QWidget(); self.info_container.setStyleSheet(f"background-color: {REFINED_PALETTE['bg_tertiary']}; border-radius: 8px; padding: 12px;"); info_layout = QVBoxLayout(self.info_container); info_layout.setContentsMargins(12, 12, 12, 12); info_layout.setSpacing(6); self.skipped_label = QLabel(); self.skipped_label.setProperty("class", "caption"); self.skipped_label.setStyleSheet(f"color: {REFINED_PALETTE['text_muted']};"); self.skipped_label.setWordWrap(True); info_layout.addWidget(self.skipped_label); self.info_container.hide(); layout.addWidget(self.info_container)
-        self.btn_layout = QHBoxLayout(); self.btn_layout.setSpacing(12); layout.addLayout(self.btn_layout); self.update_buttons(is_scanning=True)
-        self.thread = QThread(self); self.worker = FolderScannerWorker(folder_path, include_subfolders); self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run); self.worker.finished.connect(self.thread.quit); self.thread.finished.connect(self.on_thread_finished)
-        self.worker.scan_complete.connect(self.on_scan_complete); self.worker.file_found.connect(self.files_list.addItem)
+        super().__init__(parent)
+        self.found_files, self.is_closing = [], False
+        self.translator = parent.translator
+        self.setWindowTitle(self.translator.get("scan_folder_title"))
+        self.setFixedSize(600, 640)
+        self.setModal(True)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        
+        # =============== HEADER ===============
+        header_widget = QWidget()
+        header_widget.setStyleSheet(f"background-color: {REFINED_PALETTE['bg_secondary']}; border-radius: 12px; padding: 16px;")
+        header_layout = QVBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+        
+        title_label = QLabel(self.translator.get("scan_folder_title"))
+        title_label.setProperty("class", "h3")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(title_label)
+        
+        # Path контейнер з горизонтальним скролом
+        path_scroll = QScrollArea()
+        path_scroll.setWidgetResizable(True)
+        path_scroll.setFixedHeight(80)
+        path_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        path_scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: {REFINED_PALETTE['bg_tertiary']};
+                border: none;
+                border-radius: 8px;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {REFINED_PALETTE['bg_overlay']};
+                height: 8px;
+                border-radius: 4px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {REFINED_PALETTE['text_muted']};
+                border-radius: 4px;
+                min-width: 50px;
+                margin: 1px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {REFINED_PALETTE['accent']};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0;
+                background: transparent;
+            }}
+        """)
+        
+        path_label = QLabel(folder_path)
+        path_label.setProperty("class", "mono")
+        path_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        path_label.setStyleSheet(f"color: {REFINED_PALETTE['text_secondary']}; padding: 12px;")
+        path_scroll.setWidget(path_label)
+        header_layout.addWidget(path_scroll)
+        
+        layout.addWidget(header_widget)
+        
+        # =============== STATUS ===============
+        self.status_label = QLabel(self.translator.get("scanning_status_searching"))
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.status_label)
+        
+        # =============== FILES CONTENT AREA ===============
+        self.central_container = QWidget()
+        self.central_layout = QVBoxLayout(self.central_container)
+        self.central_layout.setContentsMargins(0, 0, 0, 0)
+        self.central_layout.setSpacing(0)
+        
+        # Empty state - центровано у контейнері зі стилем
+        empty_scroll = QScrollArea()
+        empty_scroll.setWidgetResizable(True)
+        empty_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        empty_scroll.setStyleSheet("background: transparent;")
+        
+        self.empty_state = RefinedContainer("elevated")
+        self.empty_state.setStyleSheet(f"background-color: {REFINED_PALETTE['bg_secondary']}; border-radius: 12px;")
+        empty_layout = QVBoxLayout(self.empty_state)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.setSpacing(12)
+        empty_layout.setContentsMargins(24, 24, 24, 24)
+        
+        self.empty_text = QLabel(self.translator.get("files_not_added"))
+        self.empty_text.setProperty("class", "h3")
+        self.empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(self.empty_text)
+        
+        empty_scroll.setWidget(self.empty_state)
+        self.central_layout.addWidget(empty_scroll, 1)
+        
+        # Files list
+        self.files_container = RefinedContainer("elevated")
+        self.files_container.setStyleSheet(f"""
+            background-color: {REFINED_PALETTE['bg_tertiary']};
+            border: none;
+            border-radius: 8px;
+        """)
+        self.files_layout = QVBoxLayout(self.files_container)
+        self.files_layout.setContentsMargins(12, 12, 12, 12)
+        self.files_layout.setSpacing(0)
+        
+        # Scroll area для файлів всередині контейнера
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.hide()
+        
+        self.files_content = QWidget()
+        self.files_content.setStyleSheet("background: transparent;")
+        self.files_main_layout = QVBoxLayout(self.files_content)
+        self.files_main_layout.setContentsMargins(0, 0, 0, 0)
+        self.files_main_layout.setSpacing(0)
+        self.files_main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        
+        scroll.setWidget(self.files_content)
+        self.files_layout.addWidget(scroll)
+        self.scroll_area = scroll
+        
+        # Empty state для всередину контейнера (поверх scroll area)
+        self.empty_state_internal = QWidget()
+        self.empty_state_internal.setStyleSheet("background: transparent;")
+        empty_internal_layout = QVBoxLayout(self.empty_state_internal)
+        empty_internal_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_internal_layout.setSpacing(12)
+        
+        empty_internal_text = QLabel(self.translator.get("files_not_added"))
+        empty_internal_text.setProperty("class", "h3")
+        empty_internal_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_internal_text.setStyleSheet(f"color: {REFINED_PALETTE['text_muted']};")
+        empty_internal_layout.addWidget(empty_internal_text)
+        
+        self.files_layout.addWidget(self.empty_state_internal)
+        self.empty_state_internal.hide()
+        
+        self.central_layout.addWidget(self.files_container, 1)
+        layout.addWidget(self.central_container, 1)
+        
+        # =============== INFO CONTAINER ===============
+        self.info_container = QWidget()
+        self.info_container.setStyleSheet(
+            f"background-color: {REFINED_PALETTE['bg_tertiary']}; border-radius: 8px; padding: 12px;"
+        )
+        info_layout = QVBoxLayout(self.info_container)
+        info_layout.setContentsMargins(12, 12, 12, 12)
+        info_layout.setSpacing(6)
+        
+        self.skipped_label = QLabel()
+        self.skipped_label.setProperty("class", "caption")
+        self.skipped_label.setStyleSheet(f"color: {REFINED_PALETTE['text_muted']};")
+        self.skipped_label.setWordWrap(True)
+        info_layout.addWidget(self.skipped_label)
+        self.info_container.hide()
+        layout.addWidget(self.info_container)
+        
+        # =============== PROGRESS BAR ===============
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(3)
+        layout.addWidget(self.progress_bar)
+        
+        # =============== BUTTONS ===============
+        self.btn_layout = QHBoxLayout()
+        self.btn_layout.setSpacing(12)
+        layout.addLayout(self.btn_layout)
+        self.update_buttons(is_scanning=True)
+        
+        # =============== THREAD SETUP ===============
+        self.thread = QThread(self)
+        self.worker = FolderScannerWorker(folder_path, include_subfolders)
+        self.worker.moveToThread(self.thread)
+        
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.thread.quit)
+        self.thread.finished.connect(self.on_thread_finished)
+        self.worker.scan_complete.connect(self.on_scan_complete)
+        self.worker.file_found.connect(self.on_file_found)
+        
         self.thread.start()
+        
+        # Підключаємо сигнал в кінці ініціалізації
+        self.files_changed.connect(self.update_display)
+
     def update_buttons(self, is_scanning=False, found_count=0):
         while self.btn_layout.count():
             item = self.btn_layout.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
+            if item.widget():
+                item.widget().deleteLater()
+        
         self.btn_layout.addStretch()
         if is_scanning:
-            cancel_btn = QPushButton(self.translator.get("cancel")); cancel_btn.clicked.connect(self.reject); self.btn_layout.addWidget(cancel_btn)
+            cancel_btn = QPushButton(self.translator.get("cancel"))
+            cancel_btn.setStyleSheet(STANDARD_BUTTON_STYLE)
+            cancel_btn.clicked.connect(self.reject)
+            self.btn_layout.addWidget(cancel_btn)
         else:
             if found_count > 0:
-                add_btn = QPushButton(self.translator.get("add_n_files", found_count)); add_btn.clicked.connect(self.accept); self.btn_layout.addWidget(add_btn)
-            close_btn = QPushButton(self.translator.get("close")); close_btn.clicked.connect(self.reject); self.btn_layout.addWidget(close_btn)
+                add_btn = QPushButton(self.translator.get("add_n_files", found_count))
+                add_btn.setStyleSheet(STANDARD_BUTTON_STYLE)
+                add_btn.setProperty("variant", "primary")
+                add_btn.clicked.connect(self.accept)
+                self.btn_layout.addWidget(add_btn)
+            close_btn = QPushButton(self.translator.get("close"))
+            close_btn.setStyleSheet(STANDARD_BUTTON_STYLE)
+            close_btn.clicked.connect(self.reject)
+            self.btn_layout.addWidget(close_btn)
         self.btn_layout.addStretch()
+
+    def on_file_found(self, filename):
+        """Викликається коли знайдено файл"""
+        file_widget = QWidget()
+        file_layout = QHBoxLayout(file_widget)
+        file_layout.setContentsMargins(12, 8, 12, 8)
+        file_layout.setSpacing(12)
+        
+        file_item = QLabel(filename)
+        file_item.setProperty("class", "caption")
+        file_item.setStyleSheet(f"color: {REFINED_PALETTE['text_secondary']};")
+        file_item.setWordWrap(True)
+        file_layout.addWidget(file_item, 1)
+        
+        # Кнопка видалення
+        remove_btn = QPushButton("×")
+        remove_btn.setProperty("variant", "ghost")
+        remove_btn.setFixedSize(24, 24)
+        remove_btn.setStyleSheet("""
+            QPushButton { 
+                font-size: 18px; 
+                padding: 0; 
+                border-radius: 4px; 
+                color: #6B6878; 
+            } 
+            QPushButton:hover { 
+                color: #CF6679; 
+                background-color: rgba(207, 102, 121, 0.1); 
+            }
+        """)
+        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_btn.clicked.connect(lambda: self.remove_file_item(file_widget))
+        file_layout.addWidget(remove_btn)
+        
+        # Стилізація файлу при наведенні
+        file_widget.setStyleSheet(f"""
+            QWidget {{
+                background-color: transparent;
+                border-radius: 6px;
+                padding: 0px;
+            }}
+        """)
+        file_widget.enterEvent = lambda e: self.on_file_item_hover(file_widget, True)
+        file_widget.leaveEvent = lambda e: self.on_file_item_hover(file_widget, False)
+        
+        self.files_main_layout.addWidget(file_widget)
+        
+        # Роздільник між файлами
+        if self.files_main_layout.count() > 1:
+            divider = QFrame()
+            divider.setFrameShape(QFrame.Shape.HLine)
+            divider.setFrameShadow(QFrame.Shadow.Plain)
+            divider.setLineWidth(1)
+            divider.setFixedHeight(1)
+            divider.setStyleSheet(f"QFrame {{ background-color: {REFINED_PALETTE['border']}; margin: 0; border: none; }}")
+            self.files_main_layout.insertWidget(self.files_main_layout.count() - 1, divider)
+        
+        # Показуємо список при першому знайденому файлі
+        if self.files_main_layout.count() <= 2:  # 1 або 2 (widget + divider)
+            # Приховуємо empty state scroll і показуємо файли scroll
+            for i in range(self.central_layout.count()):
+                widget = self.central_layout.itemAt(i).widget()
+                if isinstance(widget, QScrollArea):
+                    if widget.widget() == self.empty_state:
+                        widget.hide()
+            self.scroll_area.show()
+    
+    def on_file_item_hover(self, widget, is_hovering):
+        """Обведення при наведенні"""
+        if is_hovering:
+            widget.setStyleSheet(f"""
+                QWidget {{
+                    background-color: {REFINED_PALETTE['bg_overlay']};
+                    border-radius: 6px;
+                    padding: 0px;
+                }}
+            """)
+        else:
+            widget.setStyleSheet(f"""
+                QWidget {{
+                    background-color: transparent;
+                    border-radius: 6px;
+                    padding: 0px;
+                }}
+            """)
+    
+    def remove_file_item(self, widget):
+        """Видалення файлу з списку через кнопку"""
+        index = self.files_main_layout.indexOf(widget)
+        if index >= 0:
+            self.files_main_layout.removeWidget(widget)
+            widget.deleteLater()
+            
+            # Видаляємо роздільник якщо це не останній файл
+            if index < self.files_main_layout.count():
+                next_widget = self.files_main_layout.itemAt(index).widget()
+                if isinstance(next_widget, QFrame):
+                    self.files_main_layout.removeWidget(next_widget)
+                    next_widget.deleteLater()
+            elif index > 0:
+                prev_widget = self.files_main_layout.itemAt(index - 1).widget()
+                if isinstance(prev_widget, QFrame):
+                    self.files_main_layout.removeWidget(prev_widget)
+                    prev_widget.deleteLater()
+            
+            # Підраховуємо кількість файлів (без роздільників)
+            file_count = sum(1 for i in range(self.files_main_layout.count()) 
+                           if not isinstance(self.files_main_layout.itemAt(i).widget(), QFrame))
+            
+            # Оновлюємо found_files список
+            self.found_files = []
+            for i in range(self.files_main_layout.count()):
+                widget_item = self.files_main_layout.itemAt(i).widget()
+                if not isinstance(widget_item, QFrame):
+                    # Витягуємо ім'я файлу з QLabel
+                    for j in range(widget_item.layout().count()):
+                        child = widget_item.layout().itemAt(j).widget()
+                        if isinstance(child, QLabel) and child != widget_item.layout().itemAt(j + 1).widget() if j + 1 < widget_item.layout().count() else None:
+                            self.found_files.append(child.text())
+                            break
+            
+            # Оновлюємо UI
+            self.files_changed.emit()
+
     def on_scan_complete(self, found, skipped):
-        self.found_files = found; self.progress_bar.setRange(0, 100); self.progress_bar.setValue(100)
-        if skipped: self.skipped_label.setText(self.translator.get("skipped_folders_info") + ", ".join(skipped)); self.info_container.show()
-        if found: self.status_label.setText(self.translator.get("found_n_files", len(found)))
-        else: self.status_label.setText(self.translator.get("no_pe_files_found"))
+        self.found_files = found
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+        
+        if skipped:
+            self.skipped_label.setText(
+                self.translator.get("skipped_folders_info") + ", ".join(skipped)
+            )
+            self.info_container.show()
+        
+        if found:
+            self.status_label.setText(self.translator.get("found_n_files", len(found)))
+        else:
+            # Ніякого файла не знайдено - показуємо empty state
+            self.scroll_area.hide()
+            for i in range(self.central_layout.count()):
+                widget = self.central_layout.itemAt(i).widget()
+                if isinstance(widget, QScrollArea):
+                    if widget.widget() == self.empty_state:
+                        widget.show()
+            self.status_label.setText(self.translator.get("files_not_added"))
+        
         self.update_buttons(is_scanning=False, found_count=len(found))
+
     def on_thread_finished(self):
-        if self.thread: self.thread.deleteLater()
-        if self.worker: self.worker.deleteLater()
+        if self.thread:
+            self.thread.deleteLater()
+        if self.worker:
+            self.worker.deleteLater()
         self.thread, self.worker = None, None
-        if self.is_closing: super().reject()
-    def get_found_files(self): return self.found_files
+        if self.is_closing:
+            super().reject()
+
+    def get_found_files(self):
+        return self.found_files
+
     def reject(self):
         if self.thread and self.thread.isRunning():
             if not self.is_closing:
-                self.is_closing = True; self.status_label.setText(self.translator.get("cancelling"))
+                self.is_closing = True
+                self.status_label.setText(self.translator.get("cancelling"))
                 for i in range(self.btn_layout.count()):
                     if item := self.btn_layout.itemAt(i):
-                        if widget := item.widget(): widget.setEnabled(False)
+                        if widget := item.widget():
+                            widget.setEnabled(False)
                 self.worker.cancel()
-        else: super().reject()
-    def closeEvent(self, event): event.ignore(); self.reject()
+        else:
+            super().reject()
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.reject()
 
 class RefinedSplitter(QSplitter):
     def __init__(self, o, p=None): super().__init__(o, p); self.setHandleWidth(20); self.setStyleSheet("QSplitter { background-color: transparent; }")
