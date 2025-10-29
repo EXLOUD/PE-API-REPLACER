@@ -32,10 +32,10 @@ from PyQt6.QtGui import QTextCursor, QFont, QColor, QPalette
 try:
     from config import DLL_REPLACEMENTS
 except ImportError:
-    print("❌ Помилка: Файл config.py не знайдено або він пошкоджений")
+    print("❌ Error: config.py file not found or is corrupted")
     sys.exit(1)
 except Exception as e:
-    print(f"❌ Помилка при завантаженні конфігурації: {e}")
+    print(f"❌ Error loading configuration: {e}")
     sys.exit(1)
     
 DONATION_ADDRESSES = {
@@ -522,24 +522,50 @@ class PatcherWorker(QObject):
             self.finished.emit((s, k, e), was_cancelled, cancelled_file_index, self.total_files, remaining_files)
         
 class ThreadManager(QObject):
-    task_started = pyqtSignal(str); task_finished = pyqtSignal(str); error = pyqtSignal(str, str)
+    task_started = pyqtSignal(str)
+    task_finished = pyqtSignal(str)
+    error = pyqtSignal(str, str)
+    
     def __init__(self, parent=None):
-        super().__init__(parent); self.current_thread, self.current_worker, self.current_task_name = None, None, None
-    def is_running(self) -> bool: return self.current_thread is not None and self.current_thread.isRunning()
+        super().__init__(parent)
+        self.current_thread = None
+        self.current_worker = None
+        self.current_task_name = None
+    
+    def is_running(self) -> bool:
+        return self.current_thread is not None and self.current_thread.isRunning()
+    
     def start_task(self, worker_class, task_name: str, *args, **kwargs) -> QObject:
         if self.is_running():
-            self.error.emit("dialog_op_in_progress", f"Зачекайте, доки завершиться: '{self.current_task_name}'."); return None
-        self.current_task_name, self.current_thread = task_name, QThread()
-        self.current_worker = worker_class(*args, **kwargs); worker = self.current_worker
+            self.error.emit("dialog_op_in_progress", "")
+            return None
+        
+        self.current_task_name = task_name
+        self.current_thread = QThread()
+        self.current_worker = worker_class(*args, **kwargs)
+        worker = self.current_worker
+        
         worker.moveToThread(self.current_thread)
-        self.current_thread.started.connect(worker.run); worker.finished.connect(self.current_thread.quit)
+        self.current_thread.started.connect(worker.run)
+        worker.finished.connect(self.current_thread.quit)
         self.current_thread.finished.connect(self._cleanup_after_thread_finish)
-        self.current_thread.finished.connect(worker.deleteLater); self.current_thread.finished.connect(self.current_thread.deleteLater)
-        self.current_thread.start(); self.task_started.emit(task_name); return worker
+        self.current_thread.finished.connect(worker.deleteLater)
+        self.current_thread.finished.connect(self.current_thread.deleteLater)
+        
+        self.current_thread.start()
+        self.task_started.emit(task_name)
+        return worker
+    
     def _cleanup_after_thread_finish(self):
-        task_name = self.current_task_name; self.current_thread, self.current_worker, self.current_task_name = None, None, None; self.task_finished.emit(task_name)
+        task_name = self.current_task_name
+        self.current_thread = None
+        self.current_worker = None
+        self.current_task_name = None
+        self.task_finished.emit(task_name)
+    
     def stop_current_task(self):
-        if self.is_running() and hasattr(self.current_worker, 'cancel'): self.current_worker.cancel()
+        if self.is_running() and hasattr(self.current_worker, 'cancel'):
+            self.current_worker.cancel()
 
 # =============================================================================
 # 4. ВІДЖЕТИ ТА ДІАЛОГИ
@@ -1555,12 +1581,6 @@ class PEPatcherGUI(QMainWindow):
                         self,
                         self.translator.get("dialog_cancelled_title"),
                         cancel_message
-                    )
-                else:
-                    QMessageBox.information(
-                        self,
-                        self.translator.get("dialog_cancelled_title"),
-                        "Патчинг скасовано. Список файлів очищено."
                     )
             
             QTimer.singleShot(500, show_cancel_dialog)
