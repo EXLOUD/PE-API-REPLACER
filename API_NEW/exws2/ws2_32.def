@@ -1,0 +1,259 @@
+LIBRARY ws2_32
+EXPORTS
+    ; ==========================================================================
+    ; BASIC SOCKET API
+    ; ==========================================================================
+    WSAStartup=ex_WSAStartup @115
+    WSACleanup=ex_WSACleanup @116
+    socket=ex_socket @23
+    WSASocketA=ex_WSASocketA @119
+    WSASocketW=ex_WSASocketW @120
+    connect=ex_connect @4
+    WSAConnect=ex_connect @46
+    bind=ex_bind @2
+    listen=ex_listen @13
+    accept=ex_accept @1
+    WSAAccept=ex_WSAAccept @41
+    send=ex_send @19
+    recv=ex_recv @16
+    sendto=ex_sendto @20
+    recvfrom=ex_recvfrom @17
+    WSASend=ex_WSASend @96
+    WSARecv=ex_WSARecv @91
+    WSARecvFrom=ex_WSARecvFrom @93
+    WSASendTo=ex_WSASendTo @99
+    select=ex_select @18
+    WSAPoll=ex_WSAPoll @88
+    WSAEventSelect=ex_WSAEventSelect @67
+    closesocket=ex_closesocket @3
+    shutdown=ex_shutdown @22
+    setsockopt=ex_setsockopt @21
+    getsockopt=ex_getsockopt @7
+    ioctlsocket=ex_ioctlsocket @10
+    WSAIoctl=ex_WSAIoctl @78
+    getsockname=ex_getsockname @6
+    getpeername=ex_getpeername @5
+
+    ; ==========================================================================
+    ; ERROR / BYTE ORDER
+    ; ==========================================================================
+    WSAGetLastError=ex_WSAGetLastError @111
+    WSASetLastError=ex_WSASetLastError @112
+    htonl=ex_htonl @8
+    htons=ex_htons @9
+    ntohl=ex_ntohl @14
+    ntohs=ex_ntohs @15
+    WSAHtonl=ex_htonl @74
+    WSAHtons=ex_htons @75
+    WSANtohl=ex_ntohl @86
+    WSANtohs=ex_ntohs @87
+
+    ; ==========================================================================
+    ; INET / ADDRINFO
+    ; ==========================================================================
+    inet_addr=ex_inet_addr @11
+    inet_ntoa=ex_inet_ntoa @12
+    inet_ntop=ex_inet_ntop @194
+    inet_pton=ex_inet_pton @195
+    InetNtopW=ex_InetNtopW @34
+    InetPtonW=ex_InetPtonW @35
+    getaddrinfo=ex_getaddrinfo @192
+    GetAddrInfoW=ex_GetAddrInfoW @31
+    GetAddrInfoExW=ex_GetAddrInfoExW @30
+    freeaddrinfo=ex_freeaddrinfo @191
+    FreeAddrInfoW=ex_FreeAddrInfoW @26
+    FreeAddrInfoEx=ex_FreeAddrInfoExW @24
+    FreeAddrInfoExW=ex_FreeAddrInfoExW @25
+    getnameinfo=ex_getnameinfo @193
+    GetNameInfoW=ex_GetNameInfoW @33
+
+    ; ==========================================================================
+    ; DNS / HOST / SERVICES
+    ; ==========================================================================
+    gethostbyname=ex_gethostbyname @52
+    gethostname=ex_gethostname @57
+    gethostbyaddr=ex_gethostbyaddr @51
+    GetHostNameW=ex_GetHostNameW @32
+    getprotobyname=ex_getprotobyname @53
+    getprotobynumber=ex_getprotobynumber @54
+    getservbyname=ex_getservbyname @55
+    getservbyport=ex_getservbyport @56
+
+    ; ==========================================================================
+    ; EVENTS / ASYNC
+    ; ==========================================================================
+    WSAEnumNetworkEvents=ex_WSAEnumNetworkEvents @64
+    WSACreateEvent=ex_WSACreateEvent @50
+    WSACloseEvent=ex_WSACloseEvent @45
+    WSASetEvent=ex_WSASetEvent @100
+    WSAResetEvent=ex_WSAResetEvent @95
+    WSAWaitForMultipleEvents=ex_WSAWaitForMultipleEvents @124
+    WSAGetOverlappedResult=ex_WSAGetOverlappedResult @68
+    WSAAsyncSelect=ex_WSAAsyncSelect @101
+    __WSAFDIsSet=ex___WSAFDIsSet @151
+
+    ; ==========================================================================
+    ; PROTOCOLS
+    ; ==========================================================================
+    WSAEnumProtocolsA=ex_WSAEnumProtocolsA @65
+    WSAEnumProtocolsW=ex_WSAEnumProtocolsW @66
+
+    ; ==========================================================================
+    ; STRING / ADDRESS CONVERSION
+    ; ==========================================================================
+    WSAAddressToStringA=ex_WSAAddressToStringA @42
+    WSAAddressToStringW=ex_WSAAddressToStringW @43
+    WSAStringToAddressA=ex_WSAStringToAddressA @121
+    WSAStringToAddressW=ex_WSAStringToAddressW @122
+
+    ; ==========================================================================
+    ; SOCKET DUPLICATION
+    ; ==========================================================================
+    WSADuplicateSocketA=ex_WSADuplicateSocketA @58
+    WSADuplicateSocketW=ex_WSADuplicateSocketW @59
+
+    ; ==========================================================================
+    ; DISCONNECT
+    ; ==========================================================================
+    WSARecvDisconnect=ex_WSARecvDisconnect @92
+    WSASendDisconnect=ex_WSASendDisconnect @97
+
+    ; ==========================================================================
+    ; DATA EXPORTS - IPv6
+    ; ==========================================================================
+    in6addr_any DATA
+    in6addr_loopback DATA
+
+    ; ==========================================================================
+    ; ASYNC FUNCTIONS (STUBS - NOT SUPPORTED)
+    ; ==========================================================================
+    WSAAsyncGetHostByAddr=ex_WSAAsyncGetHostByAddr @102
+    WSAAsyncGetHostByName=ex_WSAAsyncGetHostByName @103
+    WSAAsyncGetProtoByName=ex_WSAAsyncGetProtoByName @105
+    WSAAsyncGetProtoByNumber=ex_WSAAsyncGetProtoByNumber @104
+    WSAAsyncGetServByName=ex_WSAAsyncGetServByName @107
+    WSAAsyncGetServByPort=ex_WSAAsyncGetServByPort @106
+    WSACancelAsyncRequest=ex_WSACancelAsyncRequest @108
+    WSACancelBlockingCall=ex_WSACancelBlockingCall @113
+    WSAIsBlocking=ex_WSAIsBlocking @114
+    WSASetBlockingHook=ex_WSASetBlockingHook @109
+    WSAUnhookBlockingHook=ex_WSAUnhookBlockingHook @110
+
+    ; ==========================================================================
+    ; EXTENDED GETADDRINFO (STUBS)
+    ; ==========================================================================
+    GetAddrInfoExA=ex_StubFail_NotSupp @27
+    GetAddrInfoExCancel=ex_StubFail_NotSupp @28
+    GetAddrInfoExOverlappedResult=ex_StubFail_NotSupp @29
+    SetAddrInfoExA=ex_StubFail_NotSupp @37
+    SetAddrInfoExW=ex_StubFail_NotSupp @38
+
+    ; ==========================================================================
+    ; SERVICE / NAMESPACE (STUBS)
+    ; ==========================================================================
+    WSAAdvertiseProvider=ex_StubFail_NotSupp @44
+    WSAConnectByList=ex_StubFail_NotSupp @47
+    WSAConnectByNameA=ex_StubFail_NotSupp @48
+    WSAConnectByNameW=ex_StubFail_NotSupp @49
+    WSAEnumNameSpaceProvidersA=ex_StubFail_NotSupp @60
+    WSAEnumNameSpaceProvidersExA=ex_StubFail_NotSupp @61
+    WSAEnumNameSpaceProvidersExW=ex_StubFail_NotSupp @62
+    WSAEnumNameSpaceProvidersW=ex_StubFail_NotSupp @63
+    WSAGetQOSByName=ex_StubFail_NotSupp @69
+    WSAGetServiceClassInfoA=ex_StubFail_NotSupp @70
+    WSAGetServiceClassInfoW=ex_StubFail_NotSupp @71
+    WSAGetServiceClassNameByClassIdA=ex_StubFail_NotSupp @72
+    WSAGetServiceClassNameByClassIdW=ex_StubFail_NotSupp @73
+    WSAInstallServiceClassA=ex_StubFail_NotSupp @76
+    WSAInstallServiceClassW=ex_StubFail_NotSupp @77
+    WSALookupServiceBeginA=ex_StubFail_NotSupp @80
+    WSALookupServiceBeginW=ex_StubFail_NotSupp @81
+    WSALookupServiceEnd=ex_StubSuccess @82
+    WSALookupServiceNextA=ex_StubFail_NotSupp @83
+    WSALookupServiceNextW=ex_StubFail_NotSupp @84
+    WSANSPIoctl=ex_StubFail_NotSupp @85
+    WSAProviderCompleteAsyncCall=ex_StubFail_NotSupp @89
+    WSARemoveServiceClass=ex_StubFail_NotSupp @94
+    WSASendMsg=ex_StubFail_NotSupp @98
+    WSASetServiceA=ex_StubFail_NotSupp @117
+    WSASetServiceW=ex_StubFail_NotSupp @118
+    WSAUnadvertiseProvider=ex_StubFail_NotSupp @123
+
+    ; ==========================================================================
+    ; WSC PROVIDER FUNCTIONS (STUBS)
+    ; ==========================================================================
+    WSCDeinstallProvider=ex_StubFail_NotSupp @126
+    WSCDeinstallProvider32=ex_StubFail_NotSupp @127
+    WSCDeinstallProviderEx=ex_StubFail_NotSupp @128
+    WSCEnableNSProvider=ex_StubFail_NotSupp @129
+    WSCEnableNSProvider32=ex_StubFail_NotSupp @130
+    WSCEnumNameSpaceProviders32=ex_StubFail_NotSupp @131
+    WSCEnumNameSpaceProvidersEx32=ex_StubFail_NotSupp @132
+    WSCEnumProtocols=ex_StubFail_NotSupp @133
+    WSCEnumProtocols32=ex_StubFail_NotSupp @134
+    WSCEnumProtocolsEx=ex_StubFail_NotSupp @135
+    WSCGetApplicationCategory=ex_StubFail_NotSupp @136
+    WSCGetApplicationCategoryEx=ex_StubFail_NotSupp @137
+    WSCGetProviderInfo=ex_StubFail_NotSupp @138
+    WSCGetProviderInfo32=ex_StubFail_NotSupp @139
+    WSCGetProviderPath=ex_StubFail_NotSupp @140
+    WSCGetProviderPath32=ex_StubFail_NotSupp @141
+    WSCInstallNameSpace=ex_StubFail_NotSupp @142
+    WSCInstallNameSpace32=ex_StubFail_NotSupp @143
+    WSCInstallNameSpaceEx=ex_StubFail_NotSupp @144
+    WSCInstallNameSpaceEx2=ex_StubFail_NotSupp @145
+    WSCInstallNameSpaceEx32=ex_StubFail_NotSupp @146
+    WSCInstallProvider=ex_StubFail_NotSupp @147
+    WSCInstallProvider64_32=ex_StubFail_NotSupp @148
+    WSCInstallProviderAndChains64_32=ex_StubFail_NotSupp @149
+    WSCInstallProviderEx=ex_StubFail_NotSupp @150
+    WSCSetApplicationCategory=ex_StubFail_NotSupp @152
+    WSCSetApplicationCategoryEx=ex_StubFail_NotSupp @153
+    WSCSetProviderInfo=ex_StubFail_NotSupp @154
+    WSCSetProviderInfo32=ex_StubFail_NotSupp @155
+    WSCUnInstallNameSpace=ex_StubFail_NotSupp @156
+    WSCUnInstallNameSpace32=ex_StubFail_NotSupp @157
+    WSCUnInstallNameSpaceEx2=ex_StubFail_NotSupp @158
+    WSCUpdateProvider=ex_StubFail_NotSupp @159
+    WSCUpdateProvider32=ex_StubFail_NotSupp @160
+    WSCUpdateProviderEx=ex_StubFail_NotSupp @161
+    WSCWriteNameSpaceOrder=ex_StubFail_NotSupp @162
+    WSCWriteNameSpaceOrder32=ex_StubFail_NotSupp @163
+    WSCWriteProviderOrder=ex_StubFail_NotSupp @164
+    WSCWriteProviderOrder32=ex_StubFail_NotSupp @165
+    WSCWriteProviderOrderEx=ex_StubFail_NotSupp @166
+
+    ; ==========================================================================
+    ; WAH HELPER FUNCTIONS (STUBS)
+    ; ==========================================================================
+    WahCloseApcHelper=ex_StubSuccess @167
+    WahCloseHandleHelper=ex_StubSuccess @168
+    WahCloseNotificationHandleHelper=ex_StubSuccess @169
+    WahCloseSocketHandle=ex_StubSuccess @170
+    WahCloseThread=ex_StubSuccess @171
+    WahCompleteRequest=ex_StubVoid @172
+    WahCreateHandleContextTable=ex_StubReturnNull @173
+    WahCreateNotificationHandle=ex_StubReturnNull @174
+    WahCreateSocketHandle=ex_StubReturnNull @175
+    WahDestroyHandleContextTable=ex_StubSuccess @176
+    WahDisableNonIFSHandleSupport=ex_StubSuccess @177
+    WahEnableNonIFSHandleSupport=ex_StubSuccess @178
+    WahEnumerateHandleContexts=ex_StubFail_NotSupp @179
+    WahInsertHandleContext=ex_StubFail_NotSupp @180
+    WahNotifyAllProcesses=ex_StubSuccess @181
+    WahOpenApcHelper=ex_StubReturnNull @182
+    WahOpenCurrentThread=ex_StubReturnNull @183
+    WahOpenHandleHelper=ex_StubReturnNull @184
+    WahOpenNotificationHandleHelper=ex_StubReturnNull @185
+    WahQueueUserApc=ex_StubFail_NotSupp @186
+    WahReferenceContextByHandle=ex_StubFail_NotSupp @187
+    WahRemoveHandleContext=ex_StubFail_NotSupp @188
+    WahWaitForNotification=ex_StubFail_NotSupp @189
+    WahWriteLSPEvent=ex_StubFail_NotSupp @190
+
+    ; ==========================================================================
+    ; MISC (STUBS)
+    ; ==========================================================================
+    WEP=ex_StubFail_NotSupp @500
+    WPUCompleteOverlappedRequest=ex_StubFail_NotSupp @39
+    WPUGetProviderPathEx=ex_StubFail_NotSupp @40
