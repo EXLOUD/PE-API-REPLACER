@@ -1,10 +1,11 @@
-﻿/*
+/*
  * NETAPI32 Emulator - Complete Implementation
- * All functions with ex_ prefix for DEF file exports
+ * Version: 2.0.0 - Registry-Based Configuration
+ * 
+ * All configuration stored in: HKEY_CURRENT_USER\Software\EXLOUD\Config
+ * Run setup.bat to configure before using!
  */
 
-#define WIN32_LEAN_AND_MEAN
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <winsock2.h>
@@ -13,6 +14,8 @@
 #include <lmerr.h>
 #include <dsgetdc.h>
 #include <dsrole.h>
+#include <lmjoin.h>
+#include <nb30.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,142 +25,37 @@ extern "C" {
 #endif
 
 /* ============================================================================
+ * REGISTRY CONFIGURATION
+ * ============================================================================
+ * All configuration stored in: HKEY_CURRENT_USER\Software\EXLOUD\Config
+ * 
+ * Registry values:
+ *   - ComputerName (REG_SZ)     - Computer name
+ *   - UserName (REG_SZ)         - User name
+ *   - Workgroup (REG_SZ)        - Workgroup/domain name
+ *   - MACAddress (REG_BINARY)   - 6 bytes MAC address
+ * 
+ * Run setup.bat to configure registry before using!
+ * ============================================================================ */
+
+#define REGISTRY_ROOT_W             L"Software\\EXLOUD\\Config"
+#define REG_COMPUTER_NAME_W         L"ComputerName"
+#define REG_USER_NAME_W             L"UserName"
+#define REG_WORKGROUP_W             L"Workgroup"
+#define REG_MAC_ADDRESS_W           L"MACAddress"
+
+#define MAX_COMPUTER_NAME_LEN       256
+#define MAX_USER_NAME_LEN           256
+#define MAX_WORKGROUP_LEN           256
+#define MAC_ADDRESS_SIZE            6
+
+/* ============================================================================
  * CONFIGURATION
  * ============================================================================ */
 #define ENABLE_DEBUG_CONSOLE    1
-#define ENABLE_FILE_LOGGING     1
+#define ENABLE_FILE_LOGGING     0
 
-#define MAX_LANA                254
-#define NCBNAMSZ                16
 #define MAX_SESS                254
-
-/* ============================================================================
- * NETBIOS DEFINITIONS
- * ============================================================================ */
-typedef struct _NCB {
-    UCHAR   ncb_command;
-    UCHAR   ncb_retcode;
-    UCHAR   ncb_lsn;
-    UCHAR   ncb_num;
-    PUCHAR  ncb_buffer;
-    WORD    ncb_length;
-    UCHAR   ncb_callname[NCBNAMSZ];
-    UCHAR   ncb_name[NCBNAMSZ];
-    UCHAR   ncb_rto;
-    UCHAR   ncb_sto;
-    void    (CALLBACK *ncb_post)(struct _NCB *);
-    UCHAR   ncb_lana_num;
-    UCHAR   ncb_cmd_cplt;
-    UCHAR   ncb_reserve[10];
-    HANDLE  ncb_event;
-} NCB, *PNCB;
-
-typedef struct _ADAPTER_STATUS {
-    UCHAR   adapter_address[6];
-    UCHAR   rev_major;
-    UCHAR   reserved0;
-    UCHAR   adapter_type;
-    UCHAR   rev_minor;
-    WORD    duration;
-    WORD    frmr_recv;
-    WORD    frmr_xmit;
-    WORD    iframe_recv_err;
-    WORD    xmit_aborts;
-    DWORD   xmit_success;
-    DWORD   recv_success;
-    WORD    iframe_xmit_err;
-    WORD    recv_buff_unavail;
-    WORD    t1_timeouts;
-    WORD    ti_timeouts;
-    DWORD   reserved1;
-    WORD    free_ncbs;
-    WORD    max_cfg_ncbs;
-    WORD    max_ncbs;
-    WORD    xmit_buf_unavail;
-    WORD    max_dgram_size;
-    WORD    pending_sess;
-    WORD    max_cfg_sess;
-    WORD    max_sess;
-    WORD    max_sess_pkt_size;
-    WORD    name_count;
-} ADAPTER_STATUS, *PADAPTER_STATUS;
-
-typedef struct _NAME_BUFFER {
-    UCHAR   name[NCBNAMSZ];
-    UCHAR   name_num;
-    UCHAR   name_flags;
-} NAME_BUFFER, *PNAME_BUFFER;
-
-typedef struct _LANA_ENUM {
-    UCHAR   length;
-    UCHAR   lana[MAX_LANA + 1];
-} LANA_ENUM, *PLANA_ENUM;
-
-typedef struct _SESSION_HEADER {
-    UCHAR   sess_name;
-    UCHAR   num_sess;
-    UCHAR   rcv_dg_outstanding;
-    UCHAR   rcv_any_outstanding;
-} SESSION_HEADER, *PSESSION_HEADER;
-
-typedef struct _FIND_NAME_HEADER {
-    WORD    node_count;
-    UCHAR   reserved;
-    UCHAR   unique_group;
-} FIND_NAME_HEADER, *PFIND_NAME_HEADER;
-
-/* NCB Commands */
-#define NCBCALL         0x10
-#define NCBLISTEN       0x11
-#define NCBHANGUP       0x12
-#define NCBSEND         0x14
-#define NCBRECV         0x15
-#define NCBRECVANY      0x16
-#define NCBCHAINSEND    0x17
-#define NCBDGSEND       0x20
-#define NCBDGRECV       0x21
-#define NCBDGSENDBC     0x22
-#define NCBDGRECVBC     0x23
-#define NCBADDNAME      0x30
-#define NCBDELNAME      0x31
-#define NCBRESET        0x32
-#define NCBASTAT        0x33
-#define NCBSSTAT        0x34
-#define NCBCANCEL       0x35
-#define NCBADDGRNAME    0x36
-#define NCBENUM         0x37
-#define NCBSENDNA       0x71
-#define NCBCHAINSENDNA  0x72
-#define NCBFINDNAME     0x78
-#define ASYNCH          0x80
-
-/* NCB Return Codes */
-#define NRC_GOODRET     0x00
-#define NRC_BUFLEN      0x01
-#define NRC_ILLCMD      0x03
-#define NRC_BADDR       0x07
-#define NRC_SNUMOUT     0x08
-#define NRC_NOCALL      0x14
-#define NRC_CANOCCR     0x24
-#define NRC_BRIDGE      0x23
-#define NRC_ENVNOTDEF   0x34
-#define NRC_INVADDRESS  0x39
-#define NRC_PENDING     0xFF
-#define REGISTERED      0x04
-#define UNIQUE_NAME     0x00
-
-/* ============================================================================
- * CUSTOM TYPE DEFINITIONS
- * Only types NOT in system headers
- * ============================================================================ */
-
-/* DSREG Join Info - Windows 10+ */
-#ifndef DSREG_JOIN_INFO
-typedef struct _DSREG_JOIN_INFO {
-    DWORD joinType;
-    LPWSTR pszDeviceId;
-} DSREG_JOIN_INFO, *PDSREG_JOIN_INFO;
-#endif
 
 /* ============================================================================
  * GLOBALS
@@ -177,10 +75,19 @@ static BOOL g_logLockInit = FALSE;
 static volatile LONG g_initCount = 0;
 static LogLevel g_logLevel = LOG_DEBUG;
 
-static WCHAR g_computerName[MAX_COMPUTERNAME_LENGTH + 1] = {0};
-static WCHAR g_userName[UNLEN + 1] = {0};
-static WCHAR g_workgroupName[DNLEN + 1] = L"WORKGROUP";
-static BYTE g_macAddress[6] = {0x00, 0x1A, 0x2B, 0x3C, 0x4D, 0x5E};
+/*
+ * REGISTRY-BASED CONFIGURATION (v2.0)
+ * All values are loaded from HKEY_CURRENT_USER\Software\EXIPHL\Config
+ * 
+ * NO FALLBACKS! If registry is not configured, functions return error.
+ * Run setup.bat to create registry configuration.
+ * 
+ * SYNCHRONIZED with iphlpapi.dll - both read from same registry location.
+ */
+static WCHAR g_computerName[MAX_COMPUTER_NAME_LEN] = {0};
+static WCHAR g_userName[MAX_USER_NAME_LEN] = {0};
+static WCHAR g_workgroupName[MAX_WORKGROUP_LEN] = {0};
+static BYTE g_macAddress[MAC_ADDRESS_SIZE] = {0};
 
 static BOOL g_nbInitialized = FALSE;
 static CRITICAL_SECTION g_nbLock;
@@ -220,6 +127,66 @@ static void LogMsg(LogLevel level, const char* func, const wchar_t* fmt, ...) {
 #define LogI(fmt, ...) LogMsg(LOG_INFO, __FUNCTION__, fmt, ##__VA_ARGS__)
 
 /* ============================================================================
+ * REGISTRY HELPERS
+ * ============================================================================ */
+
+/**
+ * Read wide string value from registry
+ * Returns TRUE on success, FALSE on failure
+ */
+static BOOL ReadRegistryStringW(const WCHAR* valueName, WCHAR* buffer, DWORD bufferSize)
+{
+    HKEY hKey;
+    DWORD dwType = REG_SZ;
+    DWORD dwSize = bufferSize * sizeof(WCHAR);
+    LONG result;
+    
+    result = RegOpenKeyExW(HKEY_CURRENT_USER, REGISTRY_ROOT_W, 0, KEY_READ, &hKey);
+    if (result != ERROR_SUCCESS) {
+        LogI(L"Registry key not found: %s", REGISTRY_ROOT_W);
+        return FALSE;
+    }
+    
+    result = RegQueryValueExW(hKey, valueName, NULL, &dwType, (LPBYTE)buffer, &dwSize);
+    RegCloseKey(hKey);
+    
+    if (result != ERROR_SUCCESS || dwType != REG_SZ) {
+        LogI(L"Registry value not found: %s", valueName);
+        return FALSE;
+    }
+    
+    return TRUE;
+}
+
+/**
+ * Read binary value from registry (for MAC address)
+ * Returns TRUE on success, FALSE on failure
+ */
+static BOOL ReadRegistryBinary(const WCHAR* valueName, BYTE* buffer, DWORD bufferSize)
+{
+    HKEY hKey;
+    DWORD dwType = REG_BINARY;
+    DWORD dwSize = bufferSize;
+    LONG result;
+    
+    result = RegOpenKeyExW(HKEY_CURRENT_USER, REGISTRY_ROOT_W, 0, KEY_READ, &hKey);
+    if (result != ERROR_SUCCESS) {
+        LogI(L"Registry key not found: %s", REGISTRY_ROOT_W);
+        return FALSE;
+    }
+    
+    result = RegQueryValueExW(hKey, valueName, NULL, &dwType, buffer, &dwSize);
+    RegCloseKey(hKey);
+    
+    if (result != ERROR_SUCCESS || dwType != REG_BINARY) {
+        LogI(L"Registry value not found or wrong type: %s", valueName);
+        return FALSE;
+    }
+    
+    return TRUE;
+}
+
+/* ============================================================================
  * INITIALIZATION
  * ============================================================================ */
 static void EnsureInit(void) {
@@ -235,15 +202,58 @@ static void EnsureInit(void) {
 #if ENABLE_DEBUG_CONSOLE
         AllocConsole();
         g_hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTitleW(L"NETAPI32 Emulator");
+        SetConsoleTitleW(L"NETAPI32 Emulator - Registry Config v2.0");
 #endif
         InitializeCriticalSection(&g_nbLock);
         g_nbInitialized = TRUE;
-        DWORD size = ARRAYSIZE(g_computerName);
-        GetComputerNameW(g_computerName, &size);
-        size = ARRAYSIZE(g_userName);
-        GetUserNameW(g_userName, &size);
-        LogI(L"Initialized: Computer=%s, User=%s", g_computerName, g_userName);
+        
+        /* 
+         * REGISTRY-BASED CONFIGURATION (v2.0)
+         * 
+         * Load all settings from HKEY_CURRENT_USER\Software\EXIPHL\Config
+         * NO FALLBACKS! If registry not configured, leave values empty.
+         * Functions will check and return errors if config missing.
+         * 
+         * SYNCHRONIZED with iphlpapi.dll - both read from same registry.
+         */
+        
+        LogI(L"Loading configuration from registry: %s", REGISTRY_ROOT_W);
+        
+        /* Load computer name from registry */
+        if (!ReadRegistryStringW(REG_COMPUTER_NAME_W, g_computerName, ARRAYSIZE(g_computerName))) {
+            LogI(L"ERROR: ComputerName not found in registry!");
+            LogI(L"Run setup.bat to configure registry");
+            wcscpy(g_computerName, L"<NOT CONFIGURED>");
+        }
+        
+        /* Load user name from registry */
+        if (!ReadRegistryStringW(REG_USER_NAME_W, g_userName, ARRAYSIZE(g_userName))) {
+            LogI(L"ERROR: UserName not found in registry!");
+            LogI(L"Run setup.bat to configure registry");
+            wcscpy(g_userName, L"<NOT CONFIGURED>");
+        }
+        
+        /* Load workgroup from registry */
+        if (!ReadRegistryStringW(REG_WORKGROUP_W, g_workgroupName, ARRAYSIZE(g_workgroupName))) {
+            LogI(L"ERROR: Workgroup not found in registry!");
+            LogI(L"Run setup.bat to configure registry");
+            wcscpy(g_workgroupName, L"<NOT CONFIGURED>");
+        }
+        
+        /* Load MAC address from registry */
+        if (!ReadRegistryBinary(REG_MAC_ADDRESS_W, g_macAddress, MAC_ADDRESS_SIZE)) {
+            LogI(L"ERROR: MAC address not found in registry!");
+            LogI(L"Run setup.bat to configure registry");
+            ZeroMemory(g_macAddress, MAC_ADDRESS_SIZE);
+        }
+        
+        LogI(L"Configuration loaded:");
+        LogI(L"  Computer: %s", g_computerName);
+        LogI(L"  User:     %s", g_userName);
+        LogI(L"  Workgroup: %s", g_workgroupName);
+        LogI(L"  MAC:      %02X:%02X:%02X:%02X:%02X:%02X",
+             g_macAddress[0], g_macAddress[1], g_macAddress[2],
+             g_macAddress[3], g_macAddress[4], g_macAddress[5]);
     }
 }
 
@@ -326,19 +336,32 @@ UCHAR WINAPI ex_Netbios(PNCB ncb) {
             } else if (ncb->ncb_lana_num >= g_numLanas) {
                 ret = NRC_BRIDGE;
             } else {
-                PADAPTER_STATUS as = (PADAPTER_STATUS)ncb->ncb_buffer;
-                memset(as, 0, sizeof(ADAPTER_STATUS));
-                memcpy(as->adapter_address, g_macAddress, 6);
-                as->rev_major = 3;
-                as->adapter_type = 0xFE;
-                as->max_cfg_sess = as->max_sess = MAX_SESS;
-                as->name_count = 1;
-                if (ncb->ncb_length >= sizeof(ADAPTER_STATUS) + sizeof(NAME_BUFFER)) {
-                    PNAME_BUFFER nb = (PNAME_BUFFER)(as + 1);
-                    memset(nb->name, ' ', NCBNAMSZ);
-                    WideCharToMultiByte(CP_ACP, 0, g_computerName, -1, (char*)nb->name, NCBNAMSZ-1, NULL, NULL);
-                    nb->name_num = 1;
-                    nb->name_flags = REGISTERED | UNIQUE_NAME;
+                /* Check if MAC address was loaded from registry */
+                if (g_macAddress[0] == 0 && g_macAddress[1] == 0 && g_macAddress[2] == 0 &&
+                    g_macAddress[3] == 0 && g_macAddress[4] == 0 && g_macAddress[5] == 0) {
+                    LogI(L"ERROR: MAC address not configured! Run setup.bat");
+                    ret = NRC_ENVNOTDEF;
+                } else {
+                    PADAPTER_STATUS as = (PADAPTER_STATUS)ncb->ncb_buffer;
+                    memset(as, 0, sizeof(ADAPTER_STATUS));
+                    
+                    /* 
+                     * SYNCHRONIZED: MAC address must match iphlpapi ADAPTER_MAC
+                     * Both loaded from registry: HKCU\Software\EXIPHL\Config\MACAddress
+                     */
+                    memcpy(as->adapter_address, g_macAddress, 6);
+                    
+                    as->rev_major = 3;
+                    as->adapter_type = 0xFE;
+                    as->max_cfg_sess = as->max_sess = MAX_SESS;
+                    as->name_count = 1;
+                    if (ncb->ncb_length >= sizeof(ADAPTER_STATUS) + sizeof(NAME_BUFFER)) {
+                        PNAME_BUFFER nb = (PNAME_BUFFER)(as + 1);
+                        memset(nb->name, ' ', NCBNAMSZ);
+                        WideCharToMultiByte(CP_ACP, 0, g_computerName, -1, (char*)nb->name, NCBNAMSZ-1, NULL, NULL);
+                        nb->name_num = 1;
+                        nb->name_flags = REGISTERED | UNIQUE_NAME;
+                    }
                 }
             }
             break;
@@ -393,9 +416,28 @@ UCHAR WINAPI ex_Netbios(PNCB ncb) {
 /* ============================================================================
  * WORKSTATION FUNCTIONS
  * ============================================================================ */
+
+/*
+ * NetWkstaGetInfo - SYNCHRONIZED with iphlpapi.dll GetNetworkParams()
+ * 
+ * Returns:
+ *   - wki102_computername: g_computerName (from GetComputerNameW)
+ *   - wki102_langroup: g_workgroupName = "WORKGROUP" (registry)
+ * 
+ * CRITICAL: These values MUST match iphlpapi GetNetworkParams():
+ *   - HostName should equal wki102_computername
+ *   - DomainName should equal wki102_langroup
+ */
 NET_API_STATUS WINAPI ex_NetWkstaGetInfo(LMSTR servername, DWORD level, LPBYTE* bufptr) {
     EnsureInit();
     LogI(L"NetWkstaGetInfo(level=%lu)", level);
+    
+    /* Check if configuration was loaded from registry */
+    if (wcscmp(g_computerName, L"<NOT CONFIGURED>") == 0) {
+        LogI(L"ERROR: Configuration not found in registry! Run setup.bat");
+        return ERROR_FILE_NOT_FOUND;
+    }
+    
     if (!IsLocalComputer(servername)) return NERR_InvalidComputer;
     if (!bufptr) return ERROR_INVALID_PARAMETER;
     if (level != 100 && level != 101 && level != 102) return ERROR_INVALID_LEVEL;
@@ -408,8 +450,12 @@ NET_API_STATUS WINAPI ex_NetWkstaGetInfo(LMSTR servername, DWORD level, LPBYTE* 
     LPWSTR str = (LPWSTR)(info + 1);
     
     info->wki102_platform_id = PLATFORM_ID_NT;
+    
+    /* Computer name - synchronized with iphlpapi GetNetworkParams() HostName */
     info->wki102_computername = str;
     wcscpy(str, g_computerName); str += wcslen(g_computerName) + 1;
+    
+    /* Workgroup - synchronized with iphlpapi GetNetworkParams() DomainName */
     info->wki102_langroup = str;
     wcscpy(str, g_workgroupName); str += wcslen(g_workgroupName) + 1;
     info->wki102_ver_major = 10;
@@ -427,6 +473,14 @@ NET_API_STATUS WINAPI ex_NetWkstaSetInfo(LMSTR s, DWORD l, LPBYTE b, LPDWORD e) 
 NET_API_STATUS WINAPI ex_NetWkstaUserGetInfo(LMSTR reserved, DWORD level, LPBYTE* bufptr) {
     EnsureInit();
     LogI(L"NetWkstaUserGetInfo(level=%lu)", level);
+    
+    /* Check if configuration was loaded from registry */
+    if (wcscmp(g_userName, L"<NOT CONFIGURED>") == 0 || 
+        wcscmp(g_computerName, L"<NOT CONFIGURED>") == 0) {
+        LogI(L"ERROR: Configuration not found in registry! Run setup.bat");
+        return ERROR_FILE_NOT_FOUND;
+    }
+    
     if (!bufptr) return ERROR_INVALID_PARAMETER;
     if (level != 0 && level != 1 && level != 1101) return ERROR_INVALID_LEVEL;
     
@@ -453,6 +507,13 @@ NET_API_STATUS WINAPI ex_NetWkstaUserSetInfo(LMSTR r, DWORD l, LPBYTE b, LPDWORD
 
 NET_API_STATUS WINAPI ex_NetWkstaUserEnum(LMSTR s, DWORD l, LPBYTE* b, DWORD p, LPDWORD er, LPDWORD te, LPDWORD rh) {
     EnsureInit();
+    
+    /* Check if configuration was loaded from registry */
+    if (wcscmp(g_userName, L"<NOT CONFIGURED>") == 0) {
+        LogI(L"ERROR: Configuration not found in registry! Run setup.bat");
+        return ERROR_FILE_NOT_FOUND;
+    }
+    
     if (!IsLocalComputer(s)) return NERR_InvalidComputer;
     if (!b || !er || !te) return ERROR_INVALID_PARAMETER;
     
@@ -506,9 +567,24 @@ NET_API_STATUS WINAPI ex_NetServerEnumEx(LPCWSTR s, DWORD l, LPBYTE* b, DWORD p,
     return ex_NetServerEnum(s, l, b, p, er, te, st, d, NULL);
 }
 
+/*
+ * NetServerGetInfo - SYNCHRONIZED with iphlpapi.dll GetNetworkParams()
+ * 
+ * Returns:
+ *   - sv101_name: g_computerName (from GetComputerNameW)
+ * 
+ * CRITICAL: sv101_name MUST match iphlpapi GetNetworkParams() HostName
+ */
 NET_API_STATUS WINAPI ex_NetServerGetInfo(LMSTR servername, DWORD level, LPBYTE* bufptr) {
     EnsureInit();
     LogI(L"NetServerGetInfo(level=%lu)", level);
+    
+    /* Check if configuration was loaded from registry */
+    if (wcscmp(g_computerName, L"<NOT CONFIGURED>") == 0) {
+        LogI(L"ERROR: Configuration not found in registry! Run setup.bat");
+        return ERROR_FILE_NOT_FOUND;
+    }
+    
     if (!IsLocalComputer(servername)) return NERR_InvalidComputer;
     if (!bufptr) return ERROR_INVALID_PARAMETER;
     if (level != 100 && level != 101 && level != 102) return ERROR_INVALID_LEVEL;
@@ -521,6 +597,8 @@ NET_API_STATUS WINAPI ex_NetServerGetInfo(LMSTR servername, DWORD level, LPBYTE*
     LPWSTR str = (LPWSTR)(info + 1);
     
     info->sv101_platform_id = PLATFORM_ID_NT;
+    
+    /* Computer name - synchronized with iphlpapi GetNetworkParams() HostName */
     info->sv101_name = str;
     wcscpy(str, g_computerName); str += wcslen(g_computerName) + 1;
     info->sv101_version_major = 10;

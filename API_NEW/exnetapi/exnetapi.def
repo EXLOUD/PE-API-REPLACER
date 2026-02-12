@@ -1,4 +1,4 @@
-LIBRARY EXNETAPI
+LIBRARY "NETAPI32.DLL"
 EXPORTS
 DavAddConnection=ex_DavAddConnection @1
 DavDeleteConnection=ex_DavDeleteConnection @2
