@@ -1,377 +1,1685 @@
-﻿#include <windows.h>
-#include <wintrust.h>
-#include <mscat.h>
+/*
+ * WINTRUST.DLL Emulation - Trust Everything / No Signature Verification
+ * 
+ * This emulator bypasses all signature verification checks.
+ * All files are treated as trusted.
+ *
+ * Copyright (c) 2025-2026 - EXLOUD
+ */
+
+#define WIN32_LEAN_AND_MEAN
+#define _CRT_SECURE_NO_WARNINGS
+
+#include <windows.h>
+#include <wincrypt.h>
+#include <prsht.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <wincrypt.h>
-#include <mssip.h>
 
-// === НАЛАГОДЖУВАЛЬНІ КОНСТАНТИ ===
-#define ENABLE_DEBUG_CONSOLE 0
-#define ENABLE_FILE_LOGGING  0
-#define ENABLE_MEMORY_TRACKING 0
+/* Include official Windows SDK headers for WinTrust structures and constants */
+#include <wintrust.h>
+#include <softpub.h>
+#include <mscat.h>
 
-// === ФАЛЛБЕКИ ДЛЯ КОНСТАНТ ТА ТИПІВ ===
-#ifndef TRUST_E_NOSIGNATURE
-#define TRUST_E_NOSIGNATURE ((HRESULT)0x800B0100L)
-#endif
-#ifndef E_MOREDATA
-#define E_MOREDATA HRESULT_FROM_WIN32(ERROR_MORE_DATA)
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-// Повертаємо визначення, щоб код був самодостатнім
-#ifndef _MSSIP_H_
-typedef struct _SIP_CAPS { DWORD cbSize; DWORD dwVersion; BOOL isMultiSign; DWORD dwReserved; } SIP_CAPS, *PSIP_CAPS;
-typedef struct _SIP_INFO { DWORD cbSize; GUID gSubject; DWORD dwUnionChoice; union { LPCWSTR pwszFileName; LPCWSTR pwszFileData; }; DWORD dwReserved; } SIP_INFO, *PSIP_INFO;
-#endif
-typedef struct CRYPTCATSTORE_ CRYPTCATSTORE;
-#if !defined(CRYPT_PROVIDER_DEFINITION_DECLARED)
-#define CRYPT_PROVIDER_DEFINITION_DECLARED
-typedef struct _CRYPT_PROVIDER_DEFINITION { DWORD cbStruct; GUID *pgTrustProvider; void *pfnGetCertSigner; void *pfnGetCertTrust; void *pfnGetCrlSigner; void *pfnGetCrlTrust; void *pfnGetSpcSigner; void *pfnGetSpcTrust; void *pfnGetStsSigner; void *pfnGetStsTrust; void *pfnGetStlSigner; void *pfnGetStlTrust; } CRYPT_PROVIDER_DEFINITION, *PCRYPT_PROVIDER_DEFINITION;
-#endif
+/* ============================================================================
+ * CONFIGURATION
+ * ============================================================================ */
+#define ENABLE_DEBUG_CONSOLE    1
+#define ENABLE_FILE_LOGGING     0
+#define ENABLE_MEMORY_TRACKING  0
 
-// === ВИЗНАЧЕННЯ GUID'ІВ ДЛЯ СУМІСНОСТІ ===
-static const GUID MY_WINTRUST_ACTION_GENERIC_VERIFY_V2      = {0x00aac56b, 0xcd44, 0x11d0, {0x8c, 0xc2, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee}};
-static const GUID MY_DRIVER_ACTION_VERIFY                   = {0xf750e6c3, 0x38ee, 0x11d1, {0x85, 0xe5, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee}};
-static const GUID MY_HTTPSPROV_ACTION                       = {0x573e31f8, 0xaaba, 0x11d0, {0x8c, 0xc2, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee}};
-static const GUID MY_WIN_SPUB_ACTION_TRUSTED_PUBLISHER      = {0x66426730, 0x8da1, 0x11cf, {0x87, 0x36, 0x00, 0xaa, 0x00, 0xa4, 0x85, 0xeb}};
-static const GUID MY_WIN_SPUB_ACTION_PUBLISHED_SOFTWARE     = {0x64b9d180, 0x8da2, 0x11cf, {0x87, 0x36, 0x00, 0xaa, 0x00, 0xa4, 0x85, 0xeb}};
-static const GUID MY_OFFICESIGN_ACTION_VERIFY               = {0x5555c201, 0x1296, 0x11d1, {0x85, 0x52, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee}};
-static const GUID MY_WINTRUST_ACTION_GENERIC_CHAIN_VERIFY   = {0xa4533171, 0x4879, 0x4376, {0x89, 0xae, 0x56, 0x04, 0xb7, 0x12, 0xd4, 0x48}};
-static const GUID MY_WINTRUST_ACTION_TRUSTPROVIDER_TEST     = {0x573e31f8, 0xaaba, 0x11d0, {0x8c, 0xc2, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee}};
+/* Trust mode configuration:
+ * 0 = Trust everything (WinVerifyTrust returns ERROR_SUCCESS)
+ * 1 = No signature (WinVerifyTrust returns TRUST_E_NOSIGNATURE)
+ */
+#define TRUST_MODE_TRUST_ALL    1
 
+/* ============================================================================
+ * GLOBAL VARIABLES
+ * ============================================================================ */
 
-// === РІВНІ ЛОГУВАННЯ ===
-typedef enum { LOG_LEVEL_ERROR = 0, LOG_LEVEL_WARNING, LOG_LEVEL_INFO, LOG_LEVEL_DEBUG } LogLevel;
+static CRITICAL_SECTION g_lock;
+static BOOL g_initialized = FALSE;
 
-// === СТРУКТУРИ ДЛЯ ВІДСТЕЖЕННЯ ===
-typedef struct _MEMORY_BLOCK { void* ptr; size_t size; char function[64]; DWORD thread_id; struct _MEMORY_BLOCK* next; } MEMORY_BLOCK;
-typedef struct _FAKE_CATALOG { DWORD magic; CATALOG_INFO info; BOOL in_use; } FAKE_CATALOG;
-typedef struct _OBJECT_NODE { void* object; DWORD thread_id; struct _OBJECT_NODE* next; } OBJECT_NODE;
-#define FAKE_CATALOG_MAGIC 0xCAFEBABE
-#define FAKE_HASH_SIZE 32
-// === ГЛОБАЛЬНІ ЗМІННІ ===
-#if ENABLE_FILE_LOGGING
-static FILE* g_log_file = NULL; static CRITICAL_SECTION g_log_lock;
-#endif
-#if ENABLE_MEMORY_TRACKING
-static MEMORY_BLOCK* g_memory_list = NULL; static CRITICAL_SECTION g_memory_lock; static size_t g_total_allocated = 0; static size_t g_total_freed = 0; static size_t g_allocation_count = 0;
-#endif
-static CRYPT_PROVIDER_DATA g_fake_prov_data = { sizeof(CRYPT_PROVIDER_DATA) };
-static BOOL g_locks_initialized = FALSE; static LogLevel g_current_log_level = LOG_LEVEL_INFO;
-static OBJECT_NODE* g_wvt_state_list = NULL; static OBJECT_NODE* g_cat_admin_list = NULL; static OBJECT_NODE* g_cat_info_list = NULL; static OBJECT_NODE* g_cat_handle_list = NULL;
-static CRITICAL_SECTION g_wvt_list_lock; static CRITICAL_SECTION g_cat_admin_list_lock; static CRITICAL_SECTION g_cat_info_list_lock; static CRITICAL_SECTION g_cat_handle_list_lock;
-
-// === ФУНКЦІЇ ЛОГУВАННЯ ===
-void GetTimestamp(char* buffer, size_t bufferSize) { if (!buffer || bufferSize < 20) return; SYSTEMTIME st; GetLocalTime(&st); snprintf(buffer, bufferSize, "[%02d:%02d:%02d.%03d]", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds); }
-const char* GetLogLevelString(LogLevel level) { switch (level) { case LOG_LEVEL_ERROR: return "ERROR"; case LOG_LEVEL_WARNING: return "WARN "; case LOG_LEVEL_INFO: return "INFO "; case LOG_LEVEL_DEBUG: return "DEBUG"; default: return "?????"; } }
-void LogMessageEx(LogLevel level, const char* function, const char* format, ...) { if (level > g_current_log_level) return; char timestamp[20] = { 0 }; GetTimestamp(timestamp, sizeof(timestamp)); va_list args; va_start(args, format);
-#if ENABLE_FILE_LOGGING
-if (g_log_file && g_locks_initialized) { EnterCriticalSection(&g_log_lock); fprintf(g_log_file, "%s [%s] [%s] ", timestamp, GetLogLevelString(level), function); vfprintf(g_log_file, format, args); fprintf(g_log_file, "\n"); fflush(g_log_file); LeaveCriticalSection(&g_log_lock); }
-#endif
 #if ENABLE_DEBUG_CONSOLE
-printf("[WINTRUST] %s [%s] [%s] ", timestamp, GetLogLevelString(level), function); vprintf(format, args); printf("\n");
+static HANDLE g_hConsole = NULL;
 #endif
-va_end(args); }
-#define LogError(fmt, ...)   LogMessageEx(LOG_LEVEL_ERROR, __FUNCTION__, fmt, ##__VA_ARGS__)
-#define LogWarning(fmt, ...) LogMessageEx(LOG_LEVEL_WARNING, __FUNCTION__, fmt, ##__VA_ARGS__)
-#define LogInfo(fmt, ...)    LogMessageEx(LOG_LEVEL_INFO, __FUNCTION__, fmt, ##__VA_ARGS__)
-#define LogDebug(fmt, ...)   LogMessageEx(LOG_LEVEL_DEBUG, __FUNCTION__, fmt, ##__VA_ARGS__)
-void LogHexBuffer(LogLevel level, const char* function, const char* prefix, const BYTE* buffer, DWORD size) { if (level > g_current_log_level) return; if (!buffer || size == 0) { LogMessageEx(level, function, "%s: <NULL or empty>", prefix); return; } char hex_str[257] = { 0 }; DWORD len = 0; DWORD bytes_to_log = (size > 128) ? 128 : size; for (DWORD i = 0; i < bytes_to_log; i++) { len += snprintf(hex_str + len, sizeof(hex_str) - len, "%02X", buffer[i]); } if (size > 128) { snprintf(hex_str + len, sizeof(hex_str) - len, "..."); } LogMessageEx(level, function, "%s (%lu bytes): %s", prefix, size, hex_str); }
-// === ФУНКЦІЇ УПРАВЛІННЯ ПАМ'ЯТТЮ ===
+
+#if ENABLE_FILE_LOGGING
+static FILE* g_logFile = NULL;
+static CRITICAL_SECTION g_logLock;
+#endif
+
 #if ENABLE_MEMORY_TRACKING
-void* TrackedAlloc(size_t size, const char* function) { if (size == 0) { LogWarning("Attempted to allocate 0 bytes"); return NULL; } void* ptr = malloc(size); if (!ptr) { LogError("Failed to allocate %zu bytes", size); SetLastError(ERROR_NOT_ENOUGH_MEMORY); return NULL; } memset(ptr, 0, size); if (g_locks_initialized) { EnterCriticalSection(&g_memory_lock); MEMORY_BLOCK* block = (MEMORY_BLOCK*)malloc(sizeof(MEMORY_BLOCK)); if (block) { block->ptr = ptr; block->size = size; strncpy(block->function, function, sizeof(block->function) - 1); block->function[sizeof(block->function) - 1] = '\0'; block->thread_id = GetCurrentThreadId(); block->next = g_memory_list; g_memory_list = block; g_total_allocated += size; g_allocation_count++; LogDebug("Allocated %zu bytes (total: %zu, count: %zu): %p", size, g_total_allocated - g_total_freed, g_allocation_count, ptr); } LeaveCriticalSection(&g_memory_lock); } return ptr; }
-BOOL TrackedFree(void* ptr, const char* function) { if (!ptr) return TRUE; BOOL found = FALSE; if (g_locks_initialized) { EnterCriticalSection(&g_memory_lock); MEMORY_BLOCK** current = &g_memory_list; while (*current) { if ((*current)->ptr == ptr) { MEMORY_BLOCK* block = *current; *current = block->next; g_total_freed += block->size; g_allocation_count--; LogDebug("Freed %zu bytes from %s (remaining: %zu, count: %zu): %p", block->size, block->function, g_total_allocated - g_total_freed, g_allocation_count, ptr); free(block); found = TRUE; break; } current = &(*current)->next; } LeaveCriticalSection(&g_memory_lock); } if (!found && g_locks_initialized) { LogWarning("Attempting to free untracked memory: %p", ptr); } free(ptr); return TRUE; }
-void ReportMemoryLeaks() { if (!g_locks_initialized) return; EnterCriticalSection(&g_memory_lock); if (g_memory_list) { LogError("=== MEMORY LEAKS DETECTED ==="); LogError("Total leaked: %zu bytes in %zu allocations", g_total_allocated - g_total_freed, g_allocation_count); MEMORY_BLOCK* current = g_memory_list; int leak_count = 0; while (current && leak_count < 100) { LogError("  Leak #%d: %zu bytes from %s (thread %lu): %p", ++leak_count, current->size, current->function, current->thread_id, current->ptr); current = current->next; } if (current) { LogError("  ... and more leaks (showing first 100)"); } } else { LogInfo("No memory leaks detected!"); LogInfo("Total allocated: %zu bytes, Total freed: %zu bytes", g_total_allocated, g_total_freed); } LeaveCriticalSection(&g_memory_lock); }
-void CleanupAllMemory() { if (!g_locks_initialized) return; EnterCriticalSection(&g_memory_lock); MEMORY_BLOCK* current = g_memory_list; int cleaned = 0; while (current) { MEMORY_BLOCK* next = current->next; free(current->ptr); free(current); current = next; cleaned++; } if (cleaned > 0) { LogWarning("Force-cleaned %d memory blocks on shutdown", cleaned); } g_memory_list = NULL; g_total_allocated = 0; g_total_freed = 0; g_allocation_count = 0; LeaveCriticalSection(&g_memory_lock); }
-#define SAFE_ALLOC(size) TrackedAlloc(size, __FUNCTION__)
-#define SAFE_FREE(ptr) TrackedFree(ptr, __FUNCTION__)
+static size_t g_allocCount = 0;
+static size_t g_freeCount = 0;
+static size_t g_totalAllocated = 0;
+#endif
+
+/* ============================================================================
+ * LOGGING UTILITIES
+ * ============================================================================ */
+
+static void SetConsoleColorEx(WORD color) {
+#if ENABLE_DEBUG_CONSOLE
+    if (g_hConsole && g_hConsole != INVALID_HANDLE_VALUE) {
+        SetConsoleTextAttribute(g_hConsole, color);
+    }
 #else
-#define SAFE_ALLOC(size) calloc(1, size)
-#define SAFE_FREE(ptr) free(ptr)
-#define ReportMemoryLeaks()
-#define CleanupAllMemory()
+    (void)color;
 #endif
-// === ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ КЕРУВАННЯ ОБ'ЄКТАМИ ===
-void* AddObjectToList(OBJECT_NODE** list_head, CRITICAL_SECTION* lock, void* object_data) { if (!object_data) return NULL; OBJECT_NODE* new_node = (OBJECT_NODE*)SAFE_ALLOC(sizeof(OBJECT_NODE)); if (!new_node) { LogError("Failed to allocate object node"); return NULL; } new_node->object = object_data; new_node->thread_id = GetCurrentThreadId(); EnterCriticalSection(lock); new_node->next = *list_head; *list_head = new_node; LeaveCriticalSection(lock); LogDebug("Added object %p to list (Thread: %lu)", object_data, new_node->thread_id); return object_data; }
-BOOL FindObjectInList(OBJECT_NODE* list_head, CRITICAL_SECTION* lock, void* object_to_find) { if (!object_to_find) return FALSE; BOOL found = FALSE; EnterCriticalSection(lock); OBJECT_NODE* current = list_head; while (current) { if (current->object == object_to_find) { found = TRUE; break; } current = current->next; } LeaveCriticalSection(lock); if (!found) { LogWarning("Attempt to use invalid or freed handle: %p", object_to_find); } return found; }
-BOOL RemoveObjectFromList(OBJECT_NODE** list_head, CRITICAL_SECTION* lock, void* object_to_remove) { if (!object_to_remove) return FALSE; BOOL found = FALSE; EnterCriticalSection(lock); OBJECT_NODE** current_ptr = list_head; while (*current_ptr) { if ((*current_ptr)->object == object_to_remove) { OBJECT_NODE* node_to_delete = *current_ptr; *current_ptr = node_to_delete->next; LogDebug("Removing object %p from list (created by thread: %lu)", node_to_delete->object, node_to_delete->thread_id); SAFE_FREE(node_to_delete->object); SAFE_FREE(node_to_delete); found = TRUE; break; } current_ptr = &(*current_ptr)->next; } LeaveCriticalSection(lock); if (!found) { LogWarning("Attempt to remove non-existent handle: %p", object_to_remove); } return found; }
-void CleanupObjectList(OBJECT_NODE** list_head, CRITICAL_SECTION* lock, const char* list_name) { EnterCriticalSection(lock); OBJECT_NODE* current = *list_head; int count = 0; while (current) { OBJECT_NODE* next = current->next; LogWarning("Force-cleaning leaked object from '%s': %p (Thread: %lu)", list_name, current->object, current->thread_id); SAFE_FREE(current->object); SAFE_FREE(current); current = next; count++; } *list_head = NULL; if (count > 0) { LogWarning("Cleaned up %d leaked objects from '%s' list.", count, list_name); } LeaveCriticalSection(lock); }
-// === ДОПОМІЖНІ ФУНКЦІЇ ===
-DWORD HashString(LPCWSTR str) { if (!str) return 5381; unsigned long hash = 5381; int c; while ((c = *str++)) { hash = ((hash << 5) + hash) + c; } return hash; }
-BOOL handle_hash_buffer(LPCWSTR pwszFilePath, HANDLE hFile, DWORD* pcbHash, BYTE* pbHash) { if (!pcbHash) { LogError("pcbHash is NULL"); SetLastError(ERROR_INVALID_PARAMETER); return FALSE; } if (pbHash == NULL) { *pcbHash = FAKE_HASH_SIZE; LogDebug("Returning required hash size: %d bytes", FAKE_HASH_SIZE); SetLastError(ERROR_MORE_DATA); return FALSE; } if (*pcbHash < FAKE_HASH_SIZE) { LogWarning("Buffer too small. Need %d bytes, got %d", FAKE_HASH_SIZE, *pcbHash); *pcbHash = FAKE_HASH_SIZE; SetLastError(ERROR_MORE_DATA); return FALSE; } DWORD seed; if (pwszFilePath && wcslen(pwszFilePath) > 0) { seed = HashString(pwszFilePath); LogDebug("Generating hash based on file path: %S", pwszFilePath); } else { seed = (DWORD)(ULONG_PTR)hFile; LogDebug("Generating hash based on file handle: 0x%p", hFile); } for (DWORD i = 0; i < FAKE_HASH_SIZE; i++) { seed = seed * 1103515245 + 12345; pbHash[i] = (BYTE)(seed >> 16); } *pcbHash = FAKE_HASH_SIZE; return TRUE; }
-
-// === ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ ДЕТАЛЬНОГО ЛОГУВАННЯ ===
-const char* GetActionIDName(const GUID* pgActionID) {
-    if (!pgActionID) return "NULL";
-    if (IsEqualGUID(pgActionID, &MY_WINTRUST_ACTION_GENERIC_VERIFY_V2)) return "WINTRUST_ACTION_GENERIC_VERIFY_V2";
-    if (IsEqualGUID(pgActionID, &MY_DRIVER_ACTION_VERIFY)) return "DRIVER_ACTION_VERIFY";
-    if (IsEqualGUID(pgActionID, &MY_HTTPSPROV_ACTION)) return "HTTPSPROV_ACTION / WINTRUST_ACTION_TRUSTPROVIDER_TEST";
-    if (IsEqualGUID(pgActionID, &MY_WIN_SPUB_ACTION_TRUSTED_PUBLISHER)) return "WIN_SPUB_ACTION_TRUSTED_PUBLISHER";
-    if (IsEqualGUID(pgActionID, &MY_WIN_SPUB_ACTION_PUBLISHED_SOFTWARE)) return "WIN_SPUB_ACTION_PUBLISHED_SOFTWARE";
-    if (IsEqualGUID(pgActionID, &MY_OFFICESIGN_ACTION_VERIFY)) return "OFFICESIGN_ACTION_VERIFY";
-    if (IsEqualGUID(pgActionID, &MY_WINTRUST_ACTION_GENERIC_CHAIN_VERIFY)) return "WINTRUST_ACTION_GENERIC_CHAIN_VERIFY";
-    return "Unknown Action";
 }
 
-void LogProvFlags(DWORD flags) { if (flags == 0) { LogInfo("      (none)"); return; } if (flags & WTD_USE_IE4_TRUST_FLAG) LogInfo("      WTD_USE_IE4_TRUST_FLAG"); if (flags & WTD_NO_IE4_CHAIN_FLAG) LogInfo("      WTD_NO_IE4_CHAIN_FLAG"); if (flags & WTD_NO_POLICY_USAGE_FLAG) LogInfo("      WTD_NO_POLICY_USAGE_FLAG"); if (flags & WTD_USE_LOCAL_MACHINE_CERTS) LogInfo("      WTD_USE_LOCAL_MACHINE_CERTS"); if (flags & WTD_SAFER_FLAG) LogInfo("      WTD_SAFER_FLAG"); if (flags & WTD_HASH_ONLY_FLAG) LogInfo("      WTD_HASH_ONLY_FLAG"); if (flags & WTD_USE_DEFAULT_OSVER_CHECK) LogInfo("      WTD_USE_DEFAULT_OSVER_CHECK"); if (flags & WTD_LIFETIME_SIGNING_FLAG) LogInfo("      WTD_LIFETIME_SIGNING_FLAG"); if (flags & WTD_CACHE_ONLY_URL_RETRIEVAL) LogInfo("      WTD_CACHE_ONLY_URL_RETRIEVAL"); if (flags & WTD_DISABLE_MD2_MD4) LogInfo("      WTD_DISABLE_MD2_MD4"); if (flags & WTD_MOTW) LogInfo("      WTD_MOTW"); }
-void LogRevocationChecks(DWORD flags) { if (flags == WTD_REVOKE_NONE) { LogInfo("      WTD_REVOKE_NONE"); return; } if (flags & WTD_REVOCATION_CHECK_END_CERT) LogInfo("      WTD_REVOCATION_CHECK_END_CERT"); if (flags & WTD_REVOCATION_CHECK_CHAIN) LogInfo("      WTD_REVOCATION_CHECK_CHAIN"); if (flags & WTD_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT) LogInfo("      WTD_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT"); if (flags & WTD_REVOKE_WHOLECHAIN) LogInfo("      WTD_REVOKE_WHOLECHAIN"); }
+#define COLOR_INFO    (FOREGROUND_GREEN | FOREGROUND_INTENSITY)
+#define COLOR_DEBUG   (FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY)
+#define COLOR_WARNING (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY)
+#define COLOR_ERROR   (FOREGROUND_RED | FOREGROUND_INTENSITY)
+#define COLOR_RESET   (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE)
 
-// === ОСНОВНІ ФУНКЦІЇ ===
-LONG WINAPI EXLOUD_WinVerifyTrust(HWND hwnd, GUID* pgActionID, LPVOID pWinTrustData) {
-    LogInfo("-------------------- WinVerifyTrust Called --------------------");
-    WINTRUST_DATA* pData = (WINTRUST_DATA*)pWinTrustData;
-    if (!pData) { LogError("  pWinTrustData is NULL!"); return E_INVALIDARG; }
-    LogInfo("  Called with hwnd: 0x%p", hwnd);
-    if (pgActionID) { char guid_str[40]; snprintf(guid_str, sizeof(guid_str), "{%08lX-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}", pgActionID->Data1, pgActionID->Data2, pgActionID->Data3, pgActionID->Data4[0], pgActionID->Data4[1], pgActionID->Data4[2], pgActionID->Data4[3], pgActionID->Data4[4], pgActionID->Data4[5], pgActionID->Data4[6], pgActionID->Data4[7]); LogInfo("  ActionID: %s (%s)", guid_str, GetActionIDName(pgActionID)); }
-    else { LogInfo("  ActionID: NULL"); }
-    LogInfo("  WINTRUST_DATA at 0x%p:", pWinTrustData);
-    LogInfo("    cbStruct: %lu", pData->cbStruct);
-    LogInfo("    dwStateAction: 0x%08lX (%s)", pData->dwStateAction, pData->dwStateAction == WTD_STATEACTION_VERIFY ? "WTD_STATEACTION_VERIFY" : pData->dwStateAction == WTD_STATEACTION_CLOSE ? "WTD_STATEACTION_CLOSE" : pData->dwStateAction == WTD_STATEACTION_IGNORE ? "WTD_STATEACTION_IGNORE" : "other");
-    LogInfo("    hWVTStateData: 0x%p", pData->hWVTStateData);
-    LogInfo("    dwUnionChoice: %lu (%s)", pData->dwUnionChoice, pData->dwUnionChoice == WTD_CHOICE_FILE ? "WTD_CHOICE_FILE" : pData->dwUnionChoice == WTD_CHOICE_CATALOG ? "WTD_CHOICE_CATALOG" : pData->dwUnionChoice == WTD_CHOICE_BLOB ? "WTD_CHOICE_BLOB" : "other");
-    LogInfo("    dwUIChoice: %lu (%s)", pData->dwUIChoice, pData->dwUIChoice == WTD_UI_ALL ? "WTD_UI_ALL" : pData->dwUIChoice == WTD_UI_NONE ? "WTD_UI_NONE" : pData->dwUIChoice == WTD_UI_NOBAD ? "WTD_UI_NOBAD" : "other");
-    LogInfo("    fdwRevocationChecks: 0x%08lX", pData->fdwRevocationChecks);
-    LogRevocationChecks(pData->fdwRevocationChecks);
-    LogInfo("    dwProvFlags: 0x%08lX", pData->dwProvFlags);
-    LogProvFlags(pData->dwProvFlags);
-    LogInfo("    dwUIContext: %lu (%s)", pData->dwUIContext, pData->dwUIContext == WTD_UICONTEXT_EXECUTE ? "WTD_UICONTEXT_EXECUTE" : pData->dwUIContext == WTD_UICONTEXT_INSTALL ? "WTD_UICONTEXT_INSTALL" : "other");
-    switch(pData->dwUnionChoice) { case WTD_CHOICE_FILE: if (pData->pFile) { LogInfo("      File Path: %S", pData->pFile->pcwszFilePath ? pData->pFile->pcwszFilePath : L"<NULL>"); LogInfo("      File Handle: 0x%p", pData->pFile->hFile); } break; }
-    if (pData->dwStateAction == WTD_STATEACTION_VERIFY) { LogInfo("  Processing WTD_STATEACTION_VERIFY..."); CRYPT_PROVIDER_DATA* new_state_data = (CRYPT_PROVIDER_DATA*)SAFE_ALLOC(sizeof(CRYPT_PROVIDER_DATA)); if (new_state_data) { memcpy(new_state_data, &g_fake_prov_data, sizeof(CRYPT_PROVIDER_DATA)); pData->hWVTStateData = AddObjectToList(&g_wvt_state_list, &g_wvt_list_lock, new_state_data); if (pData->hWVTStateData) { LogInfo("  Created state data at 0x%p", pData->hWVTStateData); } else { LogError("  Failed to add new state data to list!"); SAFE_FREE(new_state_data); } }
-    } else if (pData->dwStateAction == WTD_STATEACTION_CLOSE) { LogInfo("  Processing WTD_STATEACTION_CLOSE..."); if (RemoveObjectFromList(&g_wvt_state_list, &g_wvt_list_lock, pData->hWVTStateData)) { LogInfo("  Freed state data: 0x%p", pData->hWVTStateData); pData->hWVTStateData = NULL; } }
-    LogInfo("  Returning: ERROR_SUCCESS (0)"); LogInfo("------------------------------------------------------------\n"); return 0;
-}
-LONG WINAPI EXLOUD_WinVerifyTrustEx(HWND hwnd, GUID* pgActionID, WINTRUST_DATA* pWinTrustData) { LogInfo("WinVerifyTrustEx called"); return EXLOUD_WinVerifyTrust(hwnd, pgActionID, pWinTrustData); }
-
-BOOL WINAPI EXLOUD_CryptCATAdminAcquireContext2(HCATADMIN* phCatAdmin, const GUID* pgSubsystem, PCWSTR pwszHashAlgorithm, LPVOID pStrongHashPolicy, DWORD dwFlags) { LogInfo("CryptCATAdminAcquireContext2 called"); if (!phCatAdmin) { LogError("phCatAdmin is NULL"); SetLastError(ERROR_INVALID_PARAMETER); return FALSE; } FAKE_CATALOG* context = (FAKE_CATALOG*)SAFE_ALLOC(sizeof(FAKE_CATALOG)); if (!context) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return FALSE; } context->magic = FAKE_CATALOG_MAGIC; context->in_use = TRUE; context->info.cbStruct = sizeof(CATALOG_INFO); wcscpy_s(context->info.wszCatalogFile, MAX_PATH, L"fake_catalog.cat"); *phCatAdmin = AddObjectToList(&g_cat_admin_list, &g_cat_admin_list_lock, context); if (*phCatAdmin) { LogDebug("  Created new catalog admin context: %p", *phCatAdmin); return TRUE; } else { LogError("  Failed to create/add catalog admin context!"); SAFE_FREE(context); SetLastError(ERROR_NOT_ENOUGH_MEMORY); return FALSE; } }
-BOOL WINAPI EXLOUD_CryptCATAdminAcquireContext(HCATADMIN* phCatAdmin, const GUID* pgSubsystem, DWORD dwFlags) { return EXLOUD_CryptCATAdminAcquireContext2(phCatAdmin, pgSubsystem, NULL, NULL, dwFlags); }
-BOOL WINAPI EXLOUD_CryptCATAdminReleaseContext(HCATADMIN hCatAdmin, DWORD dwFlags) { LogInfo("CryptCATAdminReleaseContext for: %p", hCatAdmin); if (RemoveObjectFromList(&g_cat_admin_list, &g_cat_admin_list_lock, hCatAdmin)) { LogInfo("CryptCATAdminReleaseContext succeeded"); return TRUE; } SetLastError(ERROR_INVALID_HANDLE); return FALSE; }
-HCATINFO WINAPI EXLOUD_CryptCATAdminAddCatalog(HCATADMIN hCatAdmin, PWSTR pwszCatalogFile, PWSTR pwszSelectBaseName, DWORD dwFlags) { LogInfo("CryptCATAdminAddCatalog for admin: %p", hCatAdmin); if (!FindObjectInList(g_cat_admin_list, &g_cat_admin_list_lock, hCatAdmin)) { SetLastError(ERROR_INVALID_HANDLE); return NULL; } FAKE_CATALOG* catalog = (FAKE_CATALOG*)SAFE_ALLOC(sizeof(FAKE_CATALOG)); if (!catalog) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return NULL; } catalog->magic = FAKE_CATALOG_MAGIC; catalog->in_use = TRUE; catalog->info.cbStruct = sizeof(CATALOG_INFO); if (pwszCatalogFile) { wcsncpy(catalog->info.wszCatalogFile, pwszCatalogFile, MAX_PATH - 1); } HCATINFO new_cat_info = AddObjectToList(&g_cat_info_list, &g_cat_info_list_lock, catalog); if (new_cat_info) { LogDebug("Created HCATINFO: %p", new_cat_info); } else { SAFE_FREE(catalog); } return new_cat_info; }
-BOOL WINAPI EXLOUD_CryptCATAdminReleaseCatalogContext(HCATADMIN hCatAdmin, HCATINFO hCatInfo, DWORD dwFlags) { LogInfo("CryptCATAdminReleaseCatalogContext for info: %p", hCatInfo); if (RemoveObjectFromList(&g_cat_info_list, &g_cat_info_list_lock, hCatInfo)) { LogDebug("Released HCATINFO: %p", hCatInfo); return TRUE; } SetLastError(ERROR_INVALID_HANDLE); return FALSE; }
-BOOL WINAPI EXLOUD_CryptCATAdminCalcHashFromFileHandle(HANDLE hFile, DWORD* pcbHash, BYTE* pbHash, DWORD dwFlags) { LogInfo("CryptCATAdminCalcHashFromFileHandle called"); return handle_hash_buffer(NULL, hFile, pcbHash, pbHash); }
-BOOL WINAPI EXLOUD_CryptCATAdminCalcHashFromFileHandle2(HCATADMIN hCatAdmin, HANDLE hFile, DWORD* pcbHash, BYTE* pbHash, DWORD dwFlags) { LogInfo("CryptCATAdminCalcHashFromFileHandle2 called"); return handle_hash_buffer(NULL, hFile, pcbHash, pbHash); }
-BOOL WINAPI EXLOUD_CryptCATAdminCalcHashFromFileHandle3(HCATADMIN hCatAdmin, HANDLE hFile, DWORD* pcbHash, BYTE* pbHash, DWORD dwFlags) { LogInfo("CryptCATAdminCalcHashFromFileHandle3 called"); return handle_hash_buffer(NULL, hFile, pcbHash, pbHash); }
-HCATINFO WINAPI EXLOUD_CryptCATAdminEnumCatalogFromHash(HCATADMIN hCatAdmin, BYTE* pbHash, DWORD cbHash, DWORD dwFlags, HCATINFO* phPrevCatInfo) { LogInfo("CryptCATAdminEnumCatalogFromHash called"); LogHexBuffer(LOG_LEVEL_INFO, __FUNCTION__, "  Searching for Hash", pbHash, cbHash); if (phPrevCatInfo && *phPrevCatInfo) { if (FindObjectInList(g_cat_info_list, &g_cat_info_list_lock, *phPrevCatInfo)) { LogDebug("  Previous catalog info handle %p was valid. No more catalogs found.", *phPrevCatInfo); } } SetLastError(ERROR_NOT_FOUND); LogInfo("  No catalogs found for this hash. Returning NULL."); return NULL; }
-BOOL WINAPI EXLOUD_CryptCATCatalogInfoFromContext(HCATINFO hCatInfo, CATALOG_INFO* psCatInfo, DWORD dwFlags) { LogInfo("CryptCATCatalogInfoFromContext for info: %p", hCatInfo); if (!psCatInfo) { SetLastError(ERROR_INVALID_PARAMETER); return FALSE; } if (FindObjectInList(g_cat_info_list, &g_cat_info_list_lock, hCatInfo)) { FAKE_CATALOG* catalog = (FAKE_CATALOG*)hCatInfo; if (catalog->magic == FAKE_CATALOG_MAGIC) { memcpy(psCatInfo, &catalog->info, sizeof(CATALOG_INFO)); return TRUE; } } SetLastError(ERROR_INVALID_HANDLE); return FALSE; }
-HANDLE WINAPI EXLOUD_CryptCATOpen(LPWSTR pwszFileName, DWORD fdwOpenFlags, HCRYPTPROV hProv, DWORD dwPublicVersion, DWORD dwEncodingType) { LogInfo("CryptCATOpen with file: %S", pwszFileName ? pwszFileName : L"<NULL>"); FAKE_CATALOG* catalog = (FAKE_CATALOG*)SAFE_ALLOC(sizeof(FAKE_CATALOG)); if (!catalog) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return INVALID_HANDLE_VALUE; } catalog->magic = FAKE_CATALOG_MAGIC; catalog->in_use = TRUE; catalog->info.cbStruct = sizeof(CATALOG_INFO); if (pwszFileName) { wcsncpy(catalog->info.wszCatalogFile, pwszFileName, MAX_PATH - 1); } HANDLE hCatalog = AddObjectToList(&g_cat_handle_list, &g_cat_handle_list_lock, catalog); if (hCatalog) { LogDebug("Opened catalog, handle: %p", hCatalog); return hCatalog; } SAFE_FREE(catalog); return INVALID_HANDLE_VALUE; }
-BOOL WINAPI EXLOUD_CryptCATClose(HANDLE hCatalog) { LogInfo("CryptCATClose for handle: %p", hCatalog); if (RemoveObjectFromList(&g_cat_handle_list, &g_cat_handle_list_lock, hCatalog)) { LogDebug("Closed catalog handle successfully"); return TRUE; } SetLastError(ERROR_INVALID_HANDLE); return FALSE; }
-CRYPT_PROVIDER_DATA* WINAPI EXLOUD_WTHelperProvDataFromStateData(HANDLE hStateData) { LogInfo("WTHelperProvDataFromStateData for handle: %p", hStateData); if (FindObjectInList(g_wvt_state_list, &g_wvt_list_lock, hStateData)) { LogDebug("Found valid state data handle."); return (CRYPT_PROVIDER_DATA*)hStateData; } LogWarning("Unknown or invalid state data handle."); return NULL; }
-HRESULT WINAPI EXLOUD_WintrustGetHash(HANDLE hFile, LPCWSTR pwszFilePath, GUID *pgActionID, LPVOID pvReserved, DWORD *pcbHash, BYTE *pbHash) { LogDebug("WintrustGetHash called"); LogDebug("  File: %S, Handle: 0x%p", pwszFilePath ? pwszFilePath : L"<NULL>", hFile); if (handle_hash_buffer(pwszFilePath, hFile, pcbHash, pbHash)) { return S_OK; } return HRESULT_FROM_WIN32(GetLastError()); }
-BOOL WINAPI EXLOUD_AddPersonalTrustDBPages(HWND hwndParent, DWORD dwFlags) { LogDebug("STUB: AddPersonalTrustDBPages called"); return TRUE; }
-HRESULT WINAPI EXLOUD_CatalogCompactHashDatabase(LPCWSTR pwszDbFileName, DWORD dwFlags) { LogDebug("STUB: CatalogCompactHashDatabase called"); return S_OK; }
-HRESULT WINAPI EXLOUD_ComputeFirstPageHash(LPCWSTR lpwszFilePath, CATALOG_INFO* pCatInfo, LARGE_INTEGER* pliFileSize, BYTE* pbCalculatedHash, DWORD* pcbCalculatedHash) { LogDebug("STUB: ComputeFirstPageHash called"); if (pcbCalculatedHash) { if (!pbCalculatedHash || *pcbCalculatedHash < FAKE_HASH_SIZE) { *pcbCalculatedHash = FAKE_HASH_SIZE; return E_MOREDATA; } memset(pbCalculatedHash, 0, FAKE_HASH_SIZE); *pcbCalculatedHash = FAKE_HASH_SIZE; } return S_OK; }
-HRESULT WINAPI EXLOUD_ConfigCiFinalPolicy(LPVOID p) { LogDebug("STUB: ConfigCiFinalPolicy called"); return S_OK; }
-HRESULT WINAPI EXLOUD_ConfigCiPackageFamilyNameCheck(PCWSTR packageFamilyName, LPVOID reserved) { LogDebug("STUB: ConfigCiPackageFamilyNameCheck called"); return S_OK; }
-LPVOID WINAPI EXLOUD_CryptCATAllocSortedMemberInfo(HANDLE h, WCHAR* p) { return SAFE_ALLOC(sizeof(CRYPTCATMEMBER)); }
-BOOL WINAPI EXLOUD_CryptCATAdminRemoveCatalog(HCATADMIN hCatAdmin, LPCWSTR pwszCatalogFile, DWORD dwFlags) { LogDebug("STUB: CryptCATAdminRemoveCatalog called"); return TRUE; }
-BOOL WINAPI EXLOUD_CryptCATAdminPauseServiceForBackup(BOOL fPause, DWORD dwFlags) { LogDebug("STUB: CryptCATAdminPauseServiceForBackup called"); return TRUE; }
-BOOL WINAPI EXLOUD_CryptCATAdminResolveCatalogPath(HCATADMIN hCatAdmin, WCHAR* pwszCatalogFile, CATALOG_INFO* psCatInfo, DWORD dwFlags) { LogDebug("STUB: CryptCATAdminResolveCatalogPath called"); SetLastError(ERROR_FILE_NOT_FOUND); return FALSE; }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATCDFEnumCatAttributes(CRYPTCATCDF* pCDF, CRYPTCATATTRIBUTE* pPrevAttr, PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError) { LogDebug("STUB: CryptCATCDFEnumCatAttributes called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATMEMBER* WINAPI EXLOUD_CryptCATCDFEnumMembers(CRYPTCATCDF* pCDF, CRYPTCATMEMBER* pPrevMember, PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError) { LogDebug("STUB: CryptCATCDFEnumMembers called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATMEMBER* WINAPI EXLOUD_CryptCATCDFEnumMembersByCDFTag(CRYPTCATCDF* pCDF, LPWSTR pwszMemberTag, PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError, CRYPTCATMEMBER* pPrevMember) { LogDebug("STUB: CryptCATCDFEnumMembersByCDFTag called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATMEMBER* WINAPI EXLOUD_CryptCATCDFEnumMembersByCDFTagEx(CRYPTCATCDF* pCDF, LPWSTR pwszMemberTag, PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError, CRYPTCATMEMBER* pPrevMember, DWORD dwFlags, LPVOID pvReserved) { LogDebug("STUB: CryptCATCDFEnumMembersByCDFTagEx called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATCDFEnumAttributes(CRYPTCATCDF* pCDF, CRYPTCATMEMBER* pMember, CRYPTCATATTRIBUTE* pPrevAttr, PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError) { LogDebug("STUB: CryptCATCDFEnumAttributes called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATCDFEnumAttributesWithCDFTag(CRYPTCATCDF* pCDF, LPWSTR pwszMemberTag, CRYPTCATMEMBER* pMember, CRYPTCATATTRIBUTE* pPrevAttr, PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError) { LogDebug("STUB: CryptCATCDFEnumAttributesWithCDFTag called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-BOOL WINAPI EXLOUD_CryptCATCDFClose(LPVOID pCDF) { if(pCDF) SAFE_FREE(pCDF); return TRUE; }
-LPVOID WINAPI EXLOUD_CryptCATCDFOpen(LPWSTR pwszFilePath, LPVOID pfnParseError) { return SAFE_ALLOC(sizeof(CRYPTCATCDF)); }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATEnumerateAttr(HANDLE hCatalog, CRYPTCATMEMBER* pCatMember, CRYPTCATATTRIBUTE* pPrevAttr) { LogDebug("STUB: CryptCATEnumerateAttr called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATEnumerateCatAttr(HANDLE hCatalog, CRYPTCATATTRIBUTE* pPrevAttr) { LogDebug("STUB: CryptCATEnumerateCatAttr called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATMEMBER* WINAPI EXLOUD_CryptCATEnumerateMember(HANDLE hCatalog, CRYPTCATMEMBER* pPrevMember) { LogDebug("STUB: CryptCATEnumerateMember called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-void WINAPI EXLOUD_CryptCATFreeSortedMemberInfo(HANDLE h, LPVOID m) { if(m) SAFE_FREE(m); }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATGetAttrInfo(HANDLE hCatalog, CRYPTCATMEMBER* pCatMember, LPWSTR pwszReferenceTag) { LogDebug("STUB: CryptCATGetAttrInfo called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATGetCatAttrInfo(HANDLE hCatalog, LPWSTR pwszReferenceTag) { LogDebug("STUB: CryptCATGetCatAttrInfo called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-CRYPTCATMEMBER* WINAPI EXLOUD_CryptCATGetMemberInfo(HANDLE hCatalog, LPWSTR pwszReferenceTag) { LogDebug("STUB: CryptCATGetMemberInfo called"); SetLastError(ERROR_NOT_FOUND); return NULL; }
-BOOL WINAPI EXLOUD_CryptCATHandleFromStore(CRYPTCATSTORE* pCatStore, HCATADMIN* phCatAdmin) { LogDebug("STUB: CryptCATHandleFromStore called"); SetLastError(ERROR_NOT_FOUND); return FALSE; }
-BOOL WINAPI EXLOUD_CryptCATPersistStore(HANDLE hCatalog) { LogDebug("STUB: CryptCATPersistStore called"); return TRUE; }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATPutAttrInfo(HANDLE h, CRYPTCATMEMBER* p, LPWSTR t, DWORD d, DWORD c, BYTE* b) { LogDebug("STUB: CryptCATPutAttrInfo called"); return (CRYPTCATATTRIBUTE*)SAFE_ALLOC(sizeof(CRYPTCATATTRIBUTE)); }
-CRYPTCATATTRIBUTE* WINAPI EXLOUD_CryptCATPutCatAttrInfo(HANDLE h, LPWSTR t, DWORD d, DWORD c, BYTE *b) { LogDebug("STUB: CryptCATPutCatAttrInfo called"); return (CRYPTCATATTRIBUTE*)SAFE_ALLOC(sizeof(CRYPTCATATTRIBUTE)); }
-CRYPTCATMEMBER* WINAPI EXLOUD_CryptCATPutMemberInfo(HANDLE h, LPWSTR f, LPWSTR t, GUID* g, DWORD v, DWORD c, BYTE* b) { LogDebug("STUB: CryptCATPutMemberInfo called"); return (CRYPTCATMEMBER*)SAFE_ALLOC(sizeof(CRYPTCATMEMBER)); }
-CRYPTCATSTORE* WINAPI EXLOUD_CryptCATStoreFromHandle(HANDLE hCatalog) { LogDebug("STUB: CryptCATStoreFromHandle called"); return NULL; }
-BOOL WINAPI EXLOUD_CryptCATVerifyMember(HANDLE hCatalog, CRYPTCATMEMBER *pCatMember) { LogDebug("STUB: CryptCATVerifyMember called - always TRUE"); return TRUE; }
-BOOL WINAPI EXLOUD_CryptSIPCreateIndirectData(SIP_SUBJECTINFO *pSubjectInfo, DWORD *pcbIndirectData, SIP_INDIRECT_DATA *pIndirectData) { LogDebug("STUB: CryptSIPCreateIndirectData called"); SetLastError(TRUST_E_NOSIGNATURE); return FALSE; }
-BOOL WINAPI EXLOUD_CryptSIPGetCaps(SIP_SUBJECTINFO *pSubjectInfo, SIP_CAPS *pCaps) { LogDebug("STUB: CryptSIPGetCaps called"); if (pCaps) { pCaps->dwVersion = 2; } return TRUE; }
-BOOL WINAPI EXLOUD_CryptSIPGetInfo(SIP_SUBJECTINFO *pSubjectInfo, SIP_INFO *pInfo) { LogDebug("STUB: CryptSIPGetInfo called"); SetLastError(ERROR_NOT_FOUND); return FALSE; }
-BOOL WINAPI EXLOUD_CryptSIPGetRegWorkingFlags(DWORD *pdwFlags) { LogDebug("STUB: CryptSIPGetRegWorkingFlags called"); if (pdwFlags) *pdwFlags = 0; return TRUE; }
-BOOL WINAPI EXLOUD_CryptSIPGetSealedDigest(SIP_SUBJECTINFO* p, const BYTE* s, DWORD d, BYTE* b, DWORD* c) { LogDebug("STUB: CryptSIPGetSealedDigest called"); return FALSE; }
-BOOL WINAPI EXLOUD_CryptSIPGetSignedDataMsg(LPVOID p, DWORD* e, DWORD i, DWORD* cb, BYTE* b) { LogDebug("STUB: CryptSIPGetSignedDataMsg called"); SetLastError(TRUST_E_NOSIGNATURE); return FALSE; }
-BOOL WINAPI EXLOUD_CryptSIPPutSignedDataMsg(SIP_SUBJECTINFO* p, DWORD e, DWORD* i, DWORD c, BYTE* b) { LogDebug("STUB: CryptSIPPutSignedDataMsg called"); if(i) *i = 0; return TRUE; }
-BOOL WINAPI EXLOUD_CryptSIPRemoveSignedDataMsg(SIP_SUBJECTINFO *pSubjectInfo, DWORD dwIndex) { LogDebug("STUB: CryptSIPRemoveSignedDataMsg called"); return TRUE; }
-BOOL WINAPI EXLOUD_CryptSIPVerifyIndirectData(SIP_SUBJECTINFO *p, SIP_INDIRECT_DATA *d) { LogDebug("STUB: CryptSIPVerifyIndirectData called - always TRUE"); return TRUE; }
-HRESULT WINAPI EXLOUD_DllRegisterServer(void) { LogDebug("STUB: DllRegisterServer called"); return S_OK; }
-HRESULT WINAPI EXLOUD_DllUnregisterServer(void) { LogDebug("STUB: DllUnregisterServer called"); return S_OK; }
-PCCERT_CONTEXT WINAPI EXLOUD_FindCertsByIssuer(HCERTSTORE s, PCCTL_CONTEXT c, const WCHAR* i, PCCERT_CONTEXT p) { LogDebug("STUB: FindCertsByIssuer called"); return NULL; }
-HRESULT WINAPI EXLOUD_GetAuthenticodeSha256Hash(HANDLE h, LPCWSTR p, BYTE* b, DWORD* c) { LogDebug("STUB: GetAuthenticodeSha256Hash called"); return E_NOTIMPL; }
-BOOL WINAPI EXLOUD_IsCatalogFile(HANDLE hFile, WCHAR *pwszFileName) { LogDebug("STUB: IsCatalogFile called"); return FALSE; }
-LPVOID WINAPI EXLOUD_MsCatConstructHashTag(DWORD cbHash, BYTE *pbHash) { LogDebug("STUB: MsCatConstructHashTag called"); return NULL; }
-void WINAPI EXLOUD_MsCatFreeHashTag(LPVOID pbHashTag) { LogDebug("STUB: MsCatFreeHashTag called"); }
-BOOL WINAPI EXLOUD_OpenPersonalTrustDBDialog(HWND hwndParent) { LogDebug("STUB: OpenPersonalTrustDBDialog called"); return TRUE; }
-BOOL WINAPI EXLOUD_OpenPersonalTrustDBDialogEx(HWND h, DWORD f, PVOID* r) { LogDebug("STUB: OpenPersonalTrustDBDialogEx called"); return TRUE; }
-void WINAPI EXLOUD_SetMessageDigestInfo(PCRYPT_ATTRIBUTES a, PCMSG_SIGNER_INFO i, DWORD d) { LogDebug("STUB: SetMessageDigestInfo called"); }
-HRESULT WINAPI EXLOUD_SoftpubAuthenticode(LPVOID p) { LogDebug("STUB: SoftpubAuthenticode called"); return S_OK; }
-HRESULT WINAPI EXLOUD_SoftpubCheckCert(LPVOID p) { LogDebug("STUB: SoftpubCheckCert called"); return S_OK; }
-HRESULT WINAPI EXLOUD_SoftpubCleanup(LPVOID p) { LogDebug("STUB: SoftpubCleanup called"); return S_OK; }
-HRESULT WINAPI EXLOUD_SoftpubDefCertInit(LPVOID p) { LogDebug("STUB: SoftpubDefCertInit called"); return S_OK; }
-HRESULT WINAPI EXLOUD_SoftpubDllRegisterServer(void) { LogDebug("STUB: SoftpubDllRegisterServer called"); return S_OK; }
-HRESULT WINAPI EXLOUD_SoftpubDllUnregisterServer(void) { LogDebug("STUB: SoftpubDllUnregisterServer called"); return S_OK; }
-void WINAPI EXLOUD_SoftpubDumpStructure(WINTRUST_DATA *p) { LogDebug("STUB: SoftpubDumpStructure called"); }
-void WINAPI EXLOUD_SoftpubFreeDefUsageCallData(const char *u, LPVOID d) { LogDebug("STUB: SoftpubFreeDefUsageCallData called"); }
-HRESULT WINAPI EXLOUD_SoftpubInitialize(LPVOID p) { LogDebug("STUB: SoftpubInitialize called"); return S_OK; }
-HRESULT WINAPI EXLOUD_SoftpubLoadDefUsageCallData(const char *u, LPVOID d) { LogDebug("STUB: SoftpubLoadDefUsageCallData called"); return E_NOTIMPL; }
-BOOL WINAPI EXLOUD_SoftpubLoadMessage(SIP_SUBJECTINFO *p, HCRYPTMSG *h) { LogDebug("STUB: SoftpubLoadMessage called"); return FALSE; }
-BOOL WINAPI EXLOUD_SoftpubLoadSignature(SIP_SUBJECTINFO *p, DWORD g, PCRYPT_ATTRIBUTE_TYPE_VALUE *a, DWORD *c, BYTE *b) { LogDebug("STUB: SoftpubLoadSignature called"); return FALSE; }
-HRESULT WINAPI EXLOUD_SrpCheckSmartlockerEAandProcessToken(LPCWSTR p, HANDLE h) { LogDebug("STUB: SrpCheckSmartlockerEAandProcessToken called"); return S_OK; }
-BOOL WINAPI EXLOUD_TrustDecode(HWND h, LPWSTR d, LPWSTR f, CRYPT_DATA_BLOB *b) { LogDebug("STUB: TrustDecode called"); return FALSE; }
-PCCERT_CONTEXT WINAPI EXLOUD_TrustFindIssuerCertificate(PCCERT_CONTEXT p, HCERTSTORE h, DWORD f, LPVOID v) { LogDebug("STUB: TrustFindIssuerCertificate called"); return NULL; }
-void WINAPI EXLOUD_TrustFreeDecode(CRYPT_DATA_BLOB *p) { LogDebug("STUB: TrustFreeDecode called"); }
-BOOL WINAPI EXLOUD_TrustIsCertificateSelfSigned(PCCERT_CONTEXT p, DWORD e, DWORD f) { LogDebug("STUB: TrustIsCertificateSelfSigned called"); return FALSE; }
-BOOL WINAPI EXLOUD_TrustOpenStores(CRYPT_PROVIDER_DATA *p, const WCHAR *u, DWORD f) { LogDebug("STUB: TrustOpenStores called"); return FALSE; }
-void WINAPI EXLOUD_WTConfigCiFreePrivateData(LPVOID p) { LogDebug("STUB: WTConfigCiFreePrivateData called"); }
-HRESULT WINAPI EXLOUD_WTConvertCertCtxToChainInfo(PCCERT_CONTEXT p, LPVOID i) { LogDebug("STUB: WTConvertCertCtxToChainInfo called"); return E_NOTIMPL; }
-HRESULT WINAPI EXLOUD_WTGetBioSignatureInfo(LPVOID d, LPVOID i) { LogDebug("STUB: WTGetBioSignatureInfo called"); return E_NOTIMPL; }
-HRESULT WINAPI EXLOUD_WTGetPluginSignatureInfo(HANDLE h, LPVOID s, LPVOID i, LPVOID d) { LogDebug("STUB: WTGetPluginSignatureInfo called"); return E_NOTIMPL; }
-HRESULT WINAPI EXLOUD_WTGetSignatureInfo(LPCWSTR f, HANDLE h, DWORD d, LPVOID i, LPVOID s, LPVOID c) { LogDebug("STUB: WTGetSignatureInfo called - returning TRUST_E_NOSIGNATURE"); return TRUST_E_NOSIGNATURE; }
-HRESULT WINAPI EXLOUD_WTHelperCertCheckValidSignature(CRYPT_PROVIDER_DATA *p) { LogDebug("STUB: WTHelperCertCheckValidSignature called - returning S_OK"); return S_OK; }
-PCCERT_CONTEXT WINAPI EXLOUD_WTHelperCertFindIssuerCertificate(HCERTSTORE s, PCCERT_CONTEXT c, DWORD f, LPVOID v, PCCERT_CONTEXT p) { LogDebug("STUB: WTHelperCertFindIssuerCertificate called"); return NULL; }
-BOOL WINAPI EXLOUD_WTHelperCertIsSelfSigned(DWORD e, PCERT_INFO p) { LogDebug("STUB: WTHelperCertIsSelfSigned called"); return FALSE; }
-BOOL WINAPI EXLOUD_WTHelperCheckCertUsage(CRYPT_PROVIDER_CERT *p) { LogDebug("STUB: WTHelperCheckCertUsage called - returning TRUE"); return TRUE; }
-BOOL WINAPI EXLOUD_WTHelperGetAgencyInfo(PCCERT_CONTEXT p, PCERT_AUTHORITY_INFO_ACCESS i) { LogDebug("STUB: WTHelperGetAgencyInfo called"); return FALSE; }
-HANDLE WINAPI EXLOUD_WTHelperGetFileHandle(LPCWSTR p, DWORD a, DWORD s, DWORD c, LPVOID v) { LogDebug("STUB: WTHelperGetFileHandle called"); return INVALID_HANDLE_VALUE; }
-HRESULT WINAPI EXLOUD_WTHelperGetFileHash(LPCWSTR p, DWORD f, LPVOID v, BYTE *b, DWORD *c, BYTE *a) { LogDebug("STUB: WTHelperGetFileHash called"); return E_NOTIMPL; }
-WCHAR* WINAPI EXLOUD_WTHelperGetFileName(WINTRUST_DATA *p) { LogDebug("STUB: WTHelperGetFileName called"); return NULL; }
-BOOL WINAPI EXLOUD_WTHelperGetKnownUsages(BOOL f, PCTL_USAGE *r) { LogDebug("STUB: WTHelperGetKnownUsages called"); return FALSE; }
-PCCERT_CONTEXT WINAPI EXLOUD_WTHelperGetProvCertFromChain(CRYPT_PROVIDER_SGNR *p, DWORD i) { LogDebug("STUB: WTHelperGetProvCertFromChain called"); return NULL; }
-CRYPT_PROVIDER_PRIVDATA* WINAPI EXLOUD_WTHelperGetProvPrivateDataFromChain(CRYPT_PROVIDER_DATA *p, GUID *g) { LogDebug("STUB: WTHelperGetProvPrivateDataFromChain called"); return NULL; }
-LPVOID WINAPI EXLOUD_WTHelperGetProvSignerFromChain(LPVOID d, DWORD s, BOOL c, DWORD cs) { LogDebug("STUB: WTHelperGetProvSignerFromChain called"); return NULL; }
-BOOL WINAPI EXLOUD_WTHelperIsChainedToMicrosoft(CRYPT_PROVIDER_DATA *p) { LogDebug("STUB: WTHelperIsChainedToMicrosoft called"); return FALSE; }
-BOOL WINAPI EXLOUD_WTHelperIsChainedToMicrosoftFromStateData(HANDLE h) { LogDebug("STUB: WTHelperIsChainedToMicrosoftFromStateData called"); return FALSE; }
-BOOL WINAPI EXLOUD_WTHelperIsInRootStore(CRYPT_PROVIDER_CERT *p) { LogDebug("STUB: WTHelperIsInRootStore called"); return FALSE; }
-BOOL WINAPI EXLOUD_WTHelperOpenKnownStores(CRYPT_PROVIDER_DATA *p) { LogDebug("STUB: WTHelperOpenKnownStores called - returning TRUE"); return TRUE; }
-BOOL WINAPI EXLOUD_WTIsFirstConfigCiResultPreferred(LPVOID r, LPVOID p) { LogDebug("STUB: WTIsFirstConfigCiResultPreferred called"); return FALSE; }
-HRESULT WINAPI EXLOUD_WTLogConfigCiScriptEvent(LPVOID p, LPVOID e) { LogDebug("STUB: WTLogConfigCiScriptEvent called"); return S_OK; }
-HRESULT WINAPI EXLOUD_WTLogConfigCiScriptEvent2(LPVOID p, LPVOID e) { LogDebug("STUB: WTLogConfigCiScriptEvent2 called"); return S_OK; }
-HRESULT WINAPI EXLOUD_WTLogConfigCiSignerEvent(LPVOID s, LPVOID i, BOOL a) { LogDebug("STUB: WTLogConfigCiSignerEvent called"); return S_OK; }
-HRESULT WINAPI EXLOUD_WTValidateBioSignaturePolicy(LPVOID s, LPVOID p) { LogDebug("STUB: WTValidateBioSignaturePolicy called"); return E_NOTIMPL; }
-BOOL WINAPI EXLOUD_WVTAsn1CatMemberInfo2Decode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1CatMemberInfo2Decode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1CatMemberInfo2Encode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1CatMemberInfo2Encode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1CatMemberInfoDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1CatMemberInfoDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1CatMemberInfoEncode(LPCSTR l, DWORD f, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1CatMemberInfoEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1CatNameValueDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1CatNameValueDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1CatNameValueEncode(LPCSTR l, DWORD f, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1CatNameValueEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1IntentToSealAttributeDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1IntentToSealAttributeDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1IntentToSealAttributeEncode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1IntentToSealAttributeEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SealingSignatureAttributeDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SealingSignatureAttributeDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SealingSignatureAttributeEncode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SealingSignatureAttributeEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SealingTimestampAttributeDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SealingTimestampAttributeDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SealingTimestampAttributeEncode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SealingTimestampAttributeEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcFinancialCriteriaInfoDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcFinancialCriteriaInfoDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcFinancialCriteriaInfoEncode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcFinancialCriteriaInfoEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcIndirectDataContentDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcIndirectDataContentDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcIndirectDataContentEncode(LPCSTR l, DWORD f, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcIndirectDataContentEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcLinkDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcLinkDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcLinkEncode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcLinkEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcMinimalCriteriaInfoDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcMinimalCriteriaInfoDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcMinimalCriteriaInfoEncode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcMinimalCriteriaInfoEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcPeImageDataDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcPeImageDataDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcPeImageDataEncode(LPCSTR l, DWORD f, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcPeImageDataEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcSigInfoDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcSigInfoDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcSigInfoEncode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcSigInfoEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcSpAgencyInfoDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcSpAgencyInfoDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcSpAgencyInfoEncode(LPCSTR l, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcSpAgencyInfoEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcSpOpusInfoDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcSpOpusInfoDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcSpOpusInfoEncode(LPCSTR l, DWORD f, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcSpOpusInfoEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcStatementTypeDecode(LPCSTR l, const BYTE *e, DWORD c, DWORD f, PFN_CRYPT_ALLOC a, PFN_CRYPT_FREE fr, void *i, DWORD *cb) { LogDebug("STUB: WVTAsn1SpcStatementTypeDecode called"); SetLastError(ERROR_INVALID_DATA); return FALSE; }
-BOOL WINAPI EXLOUD_WVTAsn1SpcStatementTypeEncode(LPCSTR l, DWORD f, void *i, DWORD *pcb) { LogDebug("STUB: WVTAsn1SpcStatementTypeEncode called"); SetLastError(ERROR_CALL_NOT_IMPLEMENTED); return FALSE; }
-BOOL WINAPI EXLOUD_WintrustAddActionID(GUID *g, DWORD f, CRYPT_REGISTER_ACTIONID *p) { LogDebug("STUB: WintrustAddActionID called"); return TRUE; }
-BOOL WINAPI EXLOUD_WintrustAddDefaultForUsage(const char *u, CRYPT_PROVIDER_REGDEFUSAGE *p) { LogDebug("STUB: WintrustAddDefaultForUsage called"); return TRUE; }
-HRESULT WINAPI EXLOUD_WintrustAddProviderToProcess(GUID *p, GUID *a, WCHAR *d, DWORD m, CRYPT_PROVIDER_DEFINITION *s) { LogDebug("STUB: WintrustAddProviderToProcess called"); return S_OK; }
-HRESULT WINAPI EXLOUD_WintrustCertificateTrust(WINTRUST_DATA *p) { LogDebug("STUB: WintrustCertificateTrust called"); return S_OK; }
-BOOL WINAPI EXLOUD_WintrustGetDefaultForUsage(DWORD a, const char *u, CRYPT_PROVIDER_DEFUSAGE *s) { LogDebug("STUB: WintrustGetDefaultForUsage called"); return FALSE; }
-void WINAPI EXLOUD_WintrustGetRegPolicyFlags(DWORD *p) { LogDebug("STUB: WintrustGetRegPolicyFlags called"); if (p) *p = 0; }
-BOOL WINAPI EXLOUD_WintrustLoadFunctionPointers(GUID *g, CRYPT_PROVIDER_FUNCTIONS *f) { LogDebug("STUB: WintrustLoadFunctionPointers called"); return TRUE; }
-BOOL WINAPI EXLOUD_WintrustRemoveActionID(GUID *g) { LogDebug("STUB: WintrustRemoveActionID called"); return TRUE; }
-void WINAPI EXLOUD_WintrustSetDefaultIncludePEPageHashes(BOOL f) { LogDebug("STUB: WintrustSetDefaultIncludePEPageHashes called"); }
-BOOL WINAPI EXLOUD_WintrustSetRegPolicyFlags(DWORD d) { LogDebug("STUB: WintrustSetRegPolicyFlags called"); return TRUE; }
-BOOL WINAPI EXLOUD_WintrustUserWriteabilityCheck(HWND h, GUID *g) { LogDebug("STUB: WintrustUserWriteabilityCheck called"); return TRUE; }
-HRESULT WINAPI EXLOUD_mscat32DllRegisterServer(void) { LogDebug("STUB: mscat32DllRegisterServer called"); return S_OK; }
-HRESULT WINAPI EXLOUD_mscat32DllUnregisterServer(void) { LogDebug("STUB: mscat32DllUnregisterServer called"); return S_OK; }
-HRESULT WINAPI EXLOUD_mssip32DllRegisterServer(void) { LogDebug("STUB: mssip32DllRegisterServer called"); return S_OK; }
-HRESULT WINAPI EXLOUD_mssip32DllUnregisterServer(void) { LogDebug("STUB: mssip32DllUnregisterServer called"); return S_OK; }
-HRESULT WINAPI EXLOUD_GenericChainCertificateTrust(LPVOID p) { return S_OK; }
-HRESULT WINAPI EXLOUD_GenericChainFinalProv(LPVOID p) { return S_OK; }
-HRESULT WINAPI EXLOUD_HTTPSCertificateTrust(LPVOID p) { return S_OK; }
-HRESULT WINAPI EXLOUD_HTTPSFinalProv(LPVOID p) { return S_OK; }
-HRESULT WINAPI EXLOUD_OfficeInitializePolicy(LPVOID p) { return S_OK; }
-void WINAPI EXLOUD_OfficeCleanupPolicy(LPVOID p) { }
-HRESULT WINAPI EXLOUD_DriverInitializePolicy(LPVOID p) { return S_OK; }
-HRESULT WINAPI EXLOUD_DriverCleanupPolicy(LPVOID p) { return S_OK; }
-HRESULT WINAPI EXLOUD_DriverFinalPolicy(LPVOID p) { return S_OK; }
-
-// === DLL MAIN ===
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
-    switch (ul_reason_for_call) {
-    case DLL_PROCESS_ATTACH: {
-        DisableThreadLibraryCalls(hModule);
-#if ENABLE_FILE_LOGGING
-        InitializeCriticalSection(&g_log_lock);
-#endif
-#if ENABLE_MEMORY_TRACKING
-        InitializeCriticalSection(&g_memory_lock);
-#endif
-        InitializeCriticalSection(&g_wvt_list_lock);
-        InitializeCriticalSection(&g_cat_admin_list_lock);
-        InitializeCriticalSection(&g_cat_info_list_lock);
-        InitializeCriticalSection(&g_cat_handle_list_lock);
-        g_locks_initialized = TRUE;
+static void LogMessage(const char* level, WORD color, const char* format, va_list args) {
+    if (!g_initialized) return;
+    
+    EnterCriticalSection(&g_lock);
+    
 #if ENABLE_DEBUG_CONSOLE
-        if (AllocConsole()) {
+    if (g_hConsole && g_hConsole != INVALID_HANDLE_VALUE) {
+        SetConsoleColorEx(color);
+        printf("[%s] ", level);
+        vprintf(format, args);
+        printf("\n");
+        SetConsoleColorEx(COLOR_RESET);
+    }
+#endif
+    
+#if ENABLE_FILE_LOGGING
+    if (g_logFile) {
+        EnterCriticalSection(&g_logLock);
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        fprintf(g_logFile, "[%02d:%02d:%02d.%03d] [%s] ", 
+                st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, level);
+        vfprintf(g_logFile, format, args);
+        fprintf(g_logFile, "\n");
+        fflush(g_logFile);
+        LeaveCriticalSection(&g_logLock);
+    }
+#endif
+    
+    LeaveCriticalSection(&g_lock);
+}
+
+static void LogI(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    LogMessage("INFO", COLOR_INFO, format, args);
+    va_end(args);
+}
+
+static void LogD(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    LogMessage("DEBUG", COLOR_DEBUG, format, args);
+    va_end(args);
+}
+
+static void LogW(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    LogMessage("WARN", COLOR_WARNING, format, args);
+    va_end(args);
+}
+
+static void LogE(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    LogMessage("ERROR", COLOR_ERROR, format, args);
+    va_end(args);
+}
+
+/* ============================================================================
+ * UTILITY FUNCTIONS
+ * ============================================================================ */
+
+static const char* GetChoiceName(DWORD choice) {
+    switch (choice) {
+        case WTD_CHOICE_FILE:    return "FILE";
+        case WTD_CHOICE_CATALOG: return "CATALOG";
+        case WTD_CHOICE_BLOB:    return "BLOB";
+        case WTD_CHOICE_SIGNER:  return "SIGNER";
+        case WTD_CHOICE_CERT:    return "CERT";
+        default: return "UNKNOWN";
+    }
+}
+
+static const char* GetUIChoiceName(DWORD choice) {
+    switch (choice) {
+        case WTD_UI_ALL:    return "ALL";
+        case WTD_UI_NONE:   return "NONE";
+        case WTD_UI_NOBAD:  return "NOBAD";
+        case WTD_UI_NOGOOD: return "NOGOOD";
+        default: return "UNKNOWN";
+    }
+}
+
+static const char* GetStateActionName(DWORD action) {
+    switch (action) {
+        case WTD_STATEACTION_IGNORE:           return "IGNORE";
+        case WTD_STATEACTION_VERIFY:           return "VERIFY";
+        case WTD_STATEACTION_CLOSE:            return "CLOSE";
+        case WTD_STATEACTION_AUTO_CACHE:       return "AUTO_CACHE";
+        case WTD_STATEACTION_AUTO_CACHE_FLUSH: return "AUTO_CACHE_FLUSH";
+        default: return "UNKNOWN";
+    }
+}
+
+static const char* GetTrustProviderName(DWORD provider) {
+    switch (provider) {
+        case WTD_USE_IE4_TRUST_FLAG:            return "IE4_TRUST";
+        case WTD_NO_IE4_CHAIN_FLAG:             return "NO_IE4_CHAIN";
+        case WTD_NO_POLICY_USAGE_FLAG:          return "NO_POLICY_USAGE";
+        case WTD_REVOCATION_CHECK_NONE:         return "REVOCATION_NONE";
+        case WTD_REVOCATION_CHECK_END_CERT:     return "REVOCATION_END_CERT";
+        case WTD_REVOCATION_CHECK_CHAIN:        return "REVOCATION_CHAIN";
+        case WTD_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT: return "REVOCATION_CHAIN_EXCLUDE_ROOT";
+        case WTD_SAFER_FLAG:                    return "SAFER";
+        case WTD_HASH_ONLY_FLAG:                return "HASH_ONLY";
+        case WTD_USE_DEFAULT_OSVER_CHECK:       return "DEFAULT_OSVER_CHECK";
+        case WTD_LIFETIME_SIGNING_FLAG:         return "LIFETIME_SIGNING";
+        case WTD_CACHE_ONLY_URL_RETRIEVAL:      return "CACHE_ONLY_URL";
+        default: return "UNKNOWN";
+    }
+}
+
+/* Rename to avoid conflict with macro */
+static BOOL CompareGUIDs(const GUID* guid1, const GUID* guid2) {
+    if (!guid1 || !guid2) return FALSE;
+    return memcmp(guid1, guid2, sizeof(GUID)) == 0;
+}
+
+static void LogGUID(const char* prefix, const GUID* guid) {
+    if (!guid) {
+        LogD("%sNULL", prefix);
+        return;
+    }
+    
+    LogD("%s{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}", 
+         prefix,
+         guid->Data1, guid->Data2, guid->Data3,
+         guid->Data4[0], guid->Data4[1], guid->Data4[2], guid->Data4[3],
+         guid->Data4[4], guid->Data4[5], guid->Data4[6], guid->Data4[7]);
+}
+
+static void LogWintrustData(const WINTRUST_DATA* pWTD) {
+    if (!pWTD) {
+        LogD("  WintrustData: NULL");
+        return;
+    }
+    
+    LogD("  cbStruct: %lu", pWTD->cbStruct);
+    LogD("  dwUnionChoice: %s", GetChoiceName(pWTD->dwUnionChoice));
+    LogD("  dwUIChoice: %s", GetUIChoiceName(pWTD->dwUIChoice));
+    
+    /* Detailed revocation checks */
+    LogD("  fdwRevocationChecks: 0x%08lX", pWTD->fdwRevocationChecks);
+    if (pWTD->fdwRevocationChecks == 0) {
+        LogD("    - WTD_REVOKE_NONE");
+    } else if (pWTD->fdwRevocationChecks & 0x00000001) {
+        LogD("    - WTD_REVOKE_WHOLECHAIN");
+    }
+    
+    LogD("  dwStateAction: %s", GetStateActionName(pWTD->dwStateAction));
+    LogD("  hWVTStateData: 0x%p", pWTD->hWVTStateData);
+    
+    /* Detailed provider flags */
+    LogD("  dwProvFlags: 0x%08lX", pWTD->dwProvFlags);
+    if (pWTD->dwProvFlags != 0) {
+        if (pWTD->dwProvFlags & 0x00000001) LogD("    - WTD_USE_IE4_TRUST_FLAG");
+        if (pWTD->dwProvFlags & 0x00000002) LogD("    - WTD_NO_IE4_CHAIN_FLAG");
+        if (pWTD->dwProvFlags & 0x00000004) LogD("    - WTD_NO_POLICY_USAGE_FLAG");
+        if (pWTD->dwProvFlags & 0x00000008) LogD("    - WTD_USE_LOCAL_MACHINE_CERTS");
+        if (pWTD->dwProvFlags & 0x00000010) LogD("    - WTD_REVOCATION_CHECK_NONE");
+        if (pWTD->dwProvFlags & 0x00000020) LogD("    - WTD_REVOCATION_CHECK_END_CERT");
+        if (pWTD->dwProvFlags & 0x00000040) LogD("    - WTD_REVOCATION_CHECK_CHAIN");
+        if (pWTD->dwProvFlags & 0x00000080) LogD("    - WTD_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT");
+        if (pWTD->dwProvFlags & 0x00000100) LogD("    - WTD_SAFER_FLAG");
+        if (pWTD->dwProvFlags & 0x00000200) LogD("    - WTD_HASH_ONLY_FLAG");
+        if (pWTD->dwProvFlags & 0x00000400) LogD("    - WTD_USE_DEFAULT_OSVER_CHECK");
+        if (pWTD->dwProvFlags & 0x00000800) LogD("    - WTD_LIFETIME_SIGNING_FLAG");
+        if (pWTD->dwProvFlags & 0x00001000) LogD("    - WTD_CACHE_ONLY_URL_RETRIEVAL");
+        if (pWTD->dwProvFlags & 0x00002000) LogD("    - WTD_DISABLE_MD2_MD4");
+        if (pWTD->dwProvFlags & 0x00004000) LogD("    - WTD_MOTW (Mark-Of-The-Web)");
+        if (pWTD->dwProvFlags & 0x00008000) LogD("    - WTD_CODE_INTEGRITY_DRIVER_MODE");
+    } else {
+        LogD("    - (no flags set)");
+    }
+    
+    /* UI Context */
+    LogD("  dwUIContext: %lu", pWTD->dwUIContext);
+    if (pWTD->dwUIContext == 0) {
+        LogD("    - WTD_UICONTEXT_EXECUTE");
+    } else if (pWTD->dwUIContext == 1) {
+        LogD("    - WTD_UICONTEXT_INSTALL");
+    }
+    
+    /* Policy and SIP callback data */
+    if (pWTD->pPolicyCallbackData) {
+        LogD("  pPolicyCallbackData: 0x%p", pWTD->pPolicyCallbackData);
+    }
+    if (pWTD->pSIPClientData) {
+        LogD("  pSIPClientData: 0x%p", pWTD->pSIPClientData);
+    }
+    
+    /* URL Reference */
+    if (pWTD->pwszURLReference) {
+        LogD("  pwszURLReference: %ls", pWTD->pwszURLReference);
+    }
+    
+    /* Union data based on choice */
+    if (pWTD->dwUnionChoice == WTD_CHOICE_FILE && pWTD->pFile) {
+        WINTRUST_FILE_INFO* pFile = pWTD->pFile;
+        LogD("  === FILE INFO ===");
+        LogD("    cbStruct: %lu", pFile->cbStruct);
+        LogD("    pcwszFilePath: %ls", pFile->pcwszFilePath ? pFile->pcwszFilePath : L"(null)");
+        if (pFile->hFile && pFile->hFile != INVALID_HANDLE_VALUE) {
+            LogD("    hFile: 0x%p", pFile->hFile);
+        }
+        if (pFile->pgKnownSubject) {
+            LogGUID("    pgKnownSubject: ", pFile->pgKnownSubject);
+        }
+    }
+    else if (pWTD->dwUnionChoice == WTD_CHOICE_CATALOG && pWTD->pCatalog) {
+        WINTRUST_CATALOG_INFO* pCat = pWTD->pCatalog;
+        LogD("  === CATALOG INFO ===");
+        LogD("    cbStruct: %lu", pCat->cbStruct);
+        LogD("    pcwszCatalogFilePath: %ls", pCat->pcwszCatalogFilePath ? pCat->pcwszCatalogFilePath : L"(null)");
+        LogD("    pcwszMemberFilePath: %ls", pCat->pcwszMemberFilePath ? pCat->pcwszMemberFilePath : L"(null)");
+        LogD("    pcwszMemberTag: %ls", pCat->pcwszMemberTag ? pCat->pcwszMemberTag : L"(null)");
+        if (pCat->hMemberFile && pCat->hMemberFile != INVALID_HANDLE_VALUE) {
+            LogD("    hMemberFile: 0x%p", pCat->hMemberFile);
+        }
+        if (pCat->pbCalculatedFileHash && pCat->cbCalculatedFileHash > 0) {
+            LogD("    cbCalculatedFileHash: %lu", pCat->cbCalculatedFileHash);
+        }
+    }
+	else if (pWTD->dwUnionChoice == WTD_CHOICE_BLOB && pWTD->pBlob) {
+		WINTRUST_BLOB_INFO* pBlob = pWTD->pBlob;
+		LogD("  === BLOB INFO ===");
+		LogD("    cbStruct: %lu", pBlob->cbStruct);
+		LogGUID("    gSubject: ", &pBlob->gSubject);
+		LogD("    pcwszDisplayName: %ls", pBlob->pcwszDisplayName ? pBlob->pcwszDisplayName : L"(null)");
+		LogD("    cbMemObject: %lu", pBlob->cbMemObject);
+		LogD("    pbMemObject: 0x%p", pBlob->pbMemObject);
+		LogD("    cbMemSignedMsg: %lu", pBlob->cbMemSignedMsg);
+		LogD("    pbMemSignedMsg: 0x%p", pBlob->pbMemSignedMsg);
+	}
+}
+
+/* ============================================================================
+ * MAIN VERIFICATION FUNCTION
+ * ============================================================================ */
+
+LONG WINAPI WinVerifyTrust(HWND hwnd, GUID* pgActionID, LPVOID pWVTData)
+{
+    LogI("=== WinVerifyTrust called ===");
+    LogD("  HWND: 0x%p", hwnd);
+    LogGUID("  ActionID: ", pgActionID);
+    
+    WINTRUST_DATA* pWTD = (WINTRUST_DATA*)pWVTData;
+    LogWintrustData(pWTD);
+    
+#if TRUST_MODE_TRUST_ALL
+    LogI("  Result: TRUSTED (ERROR_SUCCESS)");
+    return ERROR_SUCCESS;
+#else
+    LogI("  Result: NO SIGNATURE (TRUST_E_NOSIGNATURE)");
+    return TRUST_E_NOSIGNATURE;
+#endif
+}
+
+/* ============================================================================
+ * TRUST PROVIDER FUNCTIONS
+ * ============================================================================ */
+
+BOOL WINAPI WintrustLoadFunctionPointers(GUID* pgActionID, CRYPT_PROVIDER_FUNCTIONS* pPfns)
+{
+    LogI("=== WintrustLoadFunctionPointers ===");
+    LogGUID("  ActionID: ", pgActionID);
+    
+    if (!pPfns) {
+        LogE("  ERROR: pPfns is NULL");
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    
+    LogD("  pPfns->cbStruct: %lu", pPfns->cbStruct);
+    
+    /* Zero out the structure */
+    ZeroMemory(pPfns, pPfns->cbStruct);
+    pPfns->cbStruct = sizeof(CRYPT_PROVIDER_FUNCTIONS);
+    
+    LogI("  Result: SUCCESS (zeroed structure)");
+    return TRUE;
+}
+
+BOOL WINAPI WintrustAddActionID(GUID* pgActionID, DWORD fdwFlags,
+                                    CRYPT_REGISTER_ACTIONID* psProvInfo)
+{
+    LogD("WintrustAddActionID");
+    LogGUID("  ActionID: ", pgActionID);
+    return TRUE;
+}
+
+BOOL WINAPI WintrustRemoveActionID(GUID* pgActionID)
+{
+    LogD("WintrustRemoveActionID");
+    LogGUID("  ActionID: ", pgActionID);
+    return TRUE;
+}
+
+CRYPT_PROVIDER_DATA* WINAPI WTHelperProvDataFromStateData(HANDLE hStateData)
+{
+    LogI("=== WTHelperProvDataFromStateData ===");
+    LogD("  hStateData: 0x%p", hStateData);
+    LogI("  Result: NULL (not implemented)");
+    return NULL;
+}
+
+CRYPT_PROVIDER_SGNR* WINAPI WTHelperGetProvSignerFromChain(
+    CRYPT_PROVIDER_DATA* pProvData, DWORD idxSigner, BOOL fCounterSigner, DWORD idxCounterSigner)
+{
+    LogI("=== WTHelperGetProvSignerFromChain ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogD("  idxSigner: %lu", idxSigner);
+    LogD("  fCounterSigner: %s", fCounterSigner ? "TRUE" : "FALSE");
+    LogD("  idxCounterSigner: %lu", idxCounterSigner);
+    LogI("  Result: NULL (not implemented)");
+    return NULL;
+}
+
+CRYPT_PROVIDER_CERT* WINAPI WTHelperGetProvCertFromChain(
+    CRYPT_PROVIDER_SGNR* pSgnr, DWORD idxCert)
+{
+    LogD("WTHelperGetProvCertFromChain");
+    return NULL;
+}
+
+void WINAPI WintrustGetRegPolicyFlags(DWORD* pdwPolicyFlags)
+{
+    LogI("=== WintrustGetRegPolicyFlags ===");
+    
+    if (pdwPolicyFlags) {
+        *pdwPolicyFlags = WTPF_IGNOREREVOKATION | 
+                          WTPF_TRUSTTEST |
+                          WTPF_IGNOREEXPIRATION |
+                          WTPF_IGNOREREVOCATIONONTS;
+        
+        LogD("  Returned flags: 0x%08lX", *pdwPolicyFlags);
+        LogD("    - WTPF_IGNOREREVOKATION");
+        LogD("    - WTPF_TRUSTTEST");
+        LogD("    - WTPF_IGNOREEXPIRATION");
+        LogD("    - WTPF_IGNOREREVOCATIONONTS");
+    } else {
+        LogW("  WARNING: pdwPolicyFlags is NULL");
+    }
+}
+
+BOOL WINAPI WintrustSetRegPolicyFlags(DWORD dwPolicyFlags)
+{
+    LogI("=== WintrustSetRegPolicyFlags ===");
+    LogD("  dwPolicyFlags: 0x%08lX", dwPolicyFlags);
+    
+    if (dwPolicyFlags & WTPF_IGNOREREVOKATION) LogD("    - WTPF_IGNOREREVOKATION");
+    if (dwPolicyFlags & WTPF_TRUSTTEST) LogD("    - WTPF_TRUSTTEST");
+    if (dwPolicyFlags & WTPF_IGNOREEXPIRATION) LogD("    - WTPF_IGNOREEXPIRATION");
+    if (dwPolicyFlags & WTPF_IGNOREREVOCATIONONTS) LogD("    - WTPF_IGNOREREVOCATIONONTS");
+    
+    LogI("  Result: SUCCESS (flags accepted but ignored)");
+    return TRUE;
+}
+
+/* ============================================================================
+ * CATALOG FUNCTIONS
+ * ============================================================================ */
+
+BOOL WINAPI CryptCATAdminAcquireContext(HCATADMIN* phCatAdmin, const GUID* pgSubsystem, DWORD dwFlags)
+{
+    LogI("=== CryptCATAdminAcquireContext ===");
+    LogGUID("  Subsystem GUID: ", pgSubsystem);
+    LogD("  dwFlags: 0x%08lX", dwFlags);
+    
+    if (!phCatAdmin) {
+        LogE("  ERROR: phCatAdmin is NULL");
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    
+    /* Return fake handle */
+    *phCatAdmin = (HCATADMIN)(ULONG_PTR)0xCA7A10CULL;
+    LogI("  Result: SUCCESS (handle=0x%p)", (void*)*phCatAdmin);
+    return TRUE;
+}
+
+BOOL WINAPI CryptCATAdminAcquireContext2(HCATADMIN* phCatAdmin, const GUID* pgSubsystem,
+                                             PCWSTR pwszHashAlgorithm, PCCERT_STRONG_SIGN_PARA pStrongHashPolicy,
+                                             DWORD dwFlags)
+{
+    LogD("CryptCATAdminAcquireContext2");
+    LogD("  HashAlgorithm: %ls", pwszHashAlgorithm ? pwszHashAlgorithm : L"(default)");
+    
+    if (!phCatAdmin) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    
+    *phCatAdmin = (HCATADMIN)(ULONG_PTR)0xCA7A10C2ULL;
+    return TRUE;
+}
+
+BOOL WINAPI CryptCATAdminReleaseContext(HCATADMIN hCatAdmin, DWORD dwFlags)
+{
+    LogI("=== CryptCATAdminReleaseContext ===");
+    LogD("  hCatAdmin: 0x%p", (void*)hCatAdmin);
+    LogD("  dwFlags: 0x%08lX", dwFlags);
+    LogI("  Result: SUCCESS");
+    return TRUE;
+}
+
+#define FAKE_HASH_SIZE 32
+
+BOOL WINAPI CryptCATAdminCalcHashFromFileHandle(HANDLE hFile, DWORD* pcbHash,
+                                                    BYTE* pbHash, DWORD dwFlags)
+{
+    LogI("=== CryptCATAdminCalcHashFromFileHandle ===");
+    LogD("  hFile: 0x%p", hFile);
+    LogD("  dwFlags: 0x%08lX", dwFlags);
+    
+    if (!pcbHash) {
+        LogE("  ERROR: pcbHash is NULL");
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    
+    if (!pbHash) {
+        *pcbHash = FAKE_HASH_SIZE;
+        LogD("  Query mode: returning required size = %lu bytes", FAKE_HASH_SIZE);
+        return TRUE;
+    }
+    
+    if (*pcbHash < FAKE_HASH_SIZE) {
+        LogW("  Buffer too small: provided=%lu, required=%lu", *pcbHash, FAKE_HASH_SIZE);
+        *pcbHash = FAKE_HASH_SIZE;
+        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return FALSE;
+    }
+    
+    /* Generate fake hash */
+    DWORD seed = (DWORD)(ULONG_PTR)hFile ^ GetTickCount();
+    for (DWORD i = 0; i < FAKE_HASH_SIZE; i++) {
+        seed = seed * 1103515245 + 12345;
+        pbHash[i] = (BYTE)(seed >> 16);
+    }
+    *pcbHash = FAKE_HASH_SIZE;
+    
+    LogI("  Generated fake hash (%lu bytes)", FAKE_HASH_SIZE);
+    LogD("  Hash: %02X%02X%02X%02X%02X%02X%02X%02X...", 
+         pbHash[0], pbHash[1], pbHash[2], pbHash[3],
+         pbHash[4], pbHash[5], pbHash[6], pbHash[7]);
+    
+    return TRUE;
+}
+
+BOOL WINAPI CryptCATAdminCalcHashFromFileHandle2(HCATADMIN hCatAdmin, HANDLE hFile,
+                                                     DWORD* pcbHash, BYTE* pbHash, DWORD dwFlags)
+{
+    LogD("CryptCATAdminCalcHashFromFileHandle2");
+    return CryptCATAdminCalcHashFromFileHandle(hFile, pcbHash, pbHash, dwFlags);
+}
+
+HCATINFO WINAPI CryptCATAdminEnumCatalogFromHash(HCATADMIN hCatAdmin, BYTE* pbHash,
+                                                     DWORD cbHash, DWORD dwFlags, HCATINFO* phPrevCatInfo)
+{
+    LogI("=== CryptCATAdminEnumCatalogFromHash ===");
+    LogD("  hCatAdmin: 0x%p", (void*)hCatAdmin);
+    LogD("  cbHash: %lu", cbHash);
+    LogD("  dwFlags: 0x%08lX", dwFlags);
+    
+    if (pbHash && cbHash > 0) {
+        LogD("  Hash: %02X%02X%02X%02X%02X%02X%02X%02X...", 
+             pbHash[0], pbHash[1], pbHash[2], pbHash[3],
+             pbHash[4], pbHash[5], pbHash[6], pbHash[7]);
+    }
+    
+    if (phPrevCatInfo && *phPrevCatInfo) {
+        LogD("  Previous catalog info: 0x%p", (void*)*phPrevCatInfo);
+    }
+    
+    LogI("  Result: NULL (no catalog found - signature bypass)");
+    
+    /* Return NULL to indicate no catalog found */
+    return NULL;
+}
+
+BOOL WINAPI CryptCATAdminReleaseCatalogContext(HCATADMIN hCatAdmin, HCATINFO hCatInfo, DWORD dwFlags)
+{
+    LogD("CryptCATAdminReleaseCatalogContext");
+    return TRUE;
+}
+
+BOOL WINAPI CryptCATCatalogInfoFromContext(HCATINFO hCatInfo, CATALOG_INFO* psCatInfo, DWORD dwFlags)
+{
+    LogD("CryptCATCatalogInfoFromContext");
+    
+    if (!psCatInfo) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    
+    ZeroMemory(psCatInfo, sizeof(CATALOG_INFO));
+    psCatInfo->cbStruct = sizeof(CATALOG_INFO);
+    wcscpy_s(psCatInfo->wszCatalogFile, MAX_PATH, L"fake_catalog.cat");
+    
+    return TRUE;
+}
+
+HANDLE WINAPI CryptCATOpen(LPWSTR pwszFileName, DWORD fdwOpenFlags, HCRYPTPROV hProv,
+                              DWORD dwPublicVersion, DWORD dwEncodingType)
+{
+    LogD("CryptCATOpen: %ls", pwszFileName ? pwszFileName : L"(null)");
+    
+    /* Return fake catalog handle */
+    return (HANDLE)(ULONG_PTR)0xCA7A106;
+}
+
+BOOL WINAPI CryptCATClose(HANDLE hCatalog)
+{
+    LogD("CryptCATClose: 0x%p", hCatalog);
+    return TRUE;
+}
+
+CRYPTCATMEMBER* WINAPI CryptCATEnumerateMember(HANDLE hCatalog, CRYPTCATMEMBER* pPrevMember)
+{
+    LogD("CryptCATEnumerateMember");
+    
+    /* Return NULL to indicate no more members */
+    return NULL;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATEnumerateAttr(HANDLE hCatalog, CRYPTCATMEMBER* pCatMember,
+                                                    CRYPTCATATTRIBUTE* pPrevAttr)
+{
+    LogD("CryptCATEnumerateAttr");
+    return NULL;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATEnumerateCatAttr(HANDLE hCatalog, CRYPTCATATTRIBUTE* pPrevAttr)
+{
+    LogD("CryptCATEnumerateCatAttr");
+    return NULL;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATGetAttrInfo(HANDLE hCatalog, CRYPTCATMEMBER* pCatMember, LPWSTR pwszReferenceTag)
+{
+    LogD("CryptCATGetAttrInfo");
+    return NULL;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATGetCatAttrInfo(HANDLE hCatalog, LPWSTR pwszReferenceTag)
+{
+    LogD("CryptCATGetCatAttrInfo");
+    return NULL;
+}
+
+CRYPTCATMEMBER* WINAPI CryptCATGetMemberInfo(HANDLE hCatalog, LPWSTR pwszReferenceTag)
+{
+    LogD("CryptCATGetMemberInfo");
+    return NULL;
+}
+
+BOOL WINAPI CryptCATPersistStore(HANDLE hCatalog)
+{
+    LogD("CryptCATPersistStore");
+    return TRUE;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATPutAttrInfo(HANDLE hCatalog, CRYPTCATMEMBER* pCatMember,
+                                   LPWSTR pwszReferenceTag, DWORD dwAttrTypeAndAction,
+                                   DWORD cbData, BYTE* pbData)
+{
+    LogD("CryptCATPutAttrInfo");
+    return NULL;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATPutCatAttrInfo(HANDLE hCatalog, LPWSTR pwszReferenceTag,
+                                      DWORD dwAttrTypeAndAction, DWORD cbData, BYTE* pbData)
+{
+    LogD("CryptCATPutCatAttrInfo");
+    return NULL;
+}
+
+CRYPTCATMEMBER* WINAPI CryptCATPutMemberInfo(HANDLE hCatalog, LPWSTR pwszFileName,
+                                                LPWSTR pwszReferenceTag, GUID* pgSubjectType,
+                                                DWORD dwCertVersion, DWORD cbSIPIndirectData,
+                                                BYTE* pbSIPIndirectData)
+{
+    LogD("CryptCATPutMemberInfo");
+    return NULL;
+}
+
+HCATINFO WINAPI CryptCATAdminAddCatalog(HCATADMIN hCatAdmin, PWSTR pwszCatalogFile,
+                                       PWSTR pwszSelectBaseName, DWORD dwFlags)
+{
+    LogD("CryptCATAdminAddCatalog: %ls", pwszCatalogFile ? pwszCatalogFile : L"(null)");
+    return NULL;
+}
+
+BOOL WINAPI CryptCATAdminRemoveCatalog(HCATADMIN hCatAdmin, LPCWSTR pwszCatalogFile, DWORD dwFlags)
+{
+    LogD("CryptCATAdminRemoveCatalog: %ls", pwszCatalogFile ? pwszCatalogFile : L"(null)");
+    return TRUE;
+}
+
+BOOL WINAPI CryptCATAdminResolveCatalogPath(HCATADMIN hCatAdmin, WCHAR* pwszCatalogFile,
+                                               CATALOG_INFO* psCatInfo, DWORD dwFlags)
+{
+    LogD("CryptCATAdminResolveCatalogPath");
+    return FALSE;
+}
+
+BOOL WINAPI CryptCATCDFClose(CRYPTCATCDF* pCDF)
+{
+    LogD("CryptCATCDFClose");
+    return TRUE;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATCDFEnumCatAttributes(CRYPTCATCDF* pCDF, CRYPTCATATTRIBUTE* pPrevAttr,
+                                                          PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError)
+{
+    LogD("CryptCATCDFEnumCatAttributes");
+    return NULL;
+}
+
+LPWSTR WINAPI CryptCATCDFEnumMembersByCDFTagEx(CRYPTCATCDF* pCDF, LPWSTR pwszPrevCDFTag,
+                                                 PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError, 
+                                                 CRYPTCATMEMBER** ppMember, BOOL fContinueOnError,
+                                                 LPVOID pvReserved)
+{
+    LogD("CryptCATCDFEnumMembersByCDFTagEx");
+    return NULL;
+}
+
+CRYPTCATCDF* WINAPI CryptCATCDFOpen(LPWSTR pwszFilePath, PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError)
+{
+    LogD("CryptCATCDFOpen: %ls", pwszFilePath ? pwszFilePath : L"(null)");
+    return NULL;
+}
+
+/* ============================================================================
+ * HELPER FUNCTIONS
+ * ============================================================================ */
+
+BOOL WINAPI WTHelperCertIsSelfSigned(DWORD dwEncoding, CERT_INFO* pCert)
+{
+    LogD("WTHelperCertIsSelfSigned");
+    return FALSE;
+}
+
+HRESULT WINAPI WTHelperCertCheckValidSignature(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("WTHelperCertCheckValidSignature");
+    return S_OK;
+}
+
+CRYPT_PROVIDER_PRIVDATA* WINAPI WTHelperGetProvPrivateDataFromChain(CRYPT_PROVIDER_DATA* pProvData,
+                                                       GUID* pgProviderID)
+{
+    LogD("WTHelperGetProvPrivateDataFromChain");
+    return NULL;
+}
+
+CRYPT_PROVIDER_CERT* WINAPI WTHelperGetProvCertFromSigner(CRYPT_PROVIDER_SGNR* pSgnr)
+{
+    LogD("WTHelperGetProvCertFromSigner");
+    return NULL;
+}
+
+/* ============================================================================
+ * POLICY PROVIDER FUNCTIONS
+ * ============================================================================ */
+
+HRESULT WINAPI SoftpubAuthenticode(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogI("=== SoftpubAuthenticode ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogI("  Result: S_OK (trust all)");
+    return S_OK;
+}
+
+HRESULT WINAPI SoftpubCheckCert(CRYPT_PROVIDER_DATA* pProvData, DWORD idxSigner,
+                                   BOOL fCounterSignerChain, DWORD idxCounterSigner)
+{
+    LogI("=== SoftpubCheckCert ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogD("  idxSigner: %lu", idxSigner);
+    LogD("  fCounterSignerChain: %s", fCounterSignerChain ? "TRUE" : "FALSE");
+    LogD("  idxCounterSigner: %lu", idxCounterSigner);
+    LogI("  Result: S_OK (trust all)");
+    return S_OK;
+}
+
+HRESULT WINAPI SoftpubCleanup(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogI("=== SoftpubCleanup ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogI("  Result: S_OK");
+    return S_OK;
+}
+
+HRESULT WINAPI SoftpubDefCertInit(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogI("=== SoftpubDefCertInit ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogI("  Result: S_OK");
+    return S_OK;
+}
+
+BOOL WINAPI SoftpubDllRegisterServer(void)
+{
+    LogI("=== SoftpubDllRegisterServer ===");
+    LogI("  Result: TRUE");
+    return TRUE;
+}
+
+BOOL WINAPI SoftpubDllUnregisterServer(void)
+{
+    LogI("=== SoftpubDllUnregisterServer ===");
+    LogI("  Result: TRUE");
+    return TRUE;
+}
+
+HRESULT WINAPI SoftpubFreeDefUsageCallData(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogI("=== SoftpubFreeDefUsageCallData ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogI("  Result: S_OK");
+    return S_OK;
+}
+
+HRESULT WINAPI SoftpubInitialize(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogI("=== SoftpubInitialize ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogI("  Result: S_OK");
+    return S_OK;
+}
+
+HRESULT WINAPI SoftpubLoadDefUsageCallData(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogI("=== SoftpubLoadDefUsageCallData ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogI("  Result: S_OK");
+    return S_OK;
+}
+
+HRESULT WINAPI SoftpubLoadMessage(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogI("=== SoftpubLoadMessage ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogI("  Result: S_OK");
+    return S_OK;
+}
+
+HRESULT WINAPI SoftpubLoadSignature(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogI("=== SoftpubLoadSignature ===");
+    LogD("  pProvData: 0x%p", pProvData);
+    LogI("  Result: S_OK");
+    return S_OK;
+}
+
+/* ============================================================================
+ * DRIVER VERIFICATION FUNCTIONS
+ * ============================================================================ */
+
+HRESULT WINAPI DriverCleanupPolicy(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("DriverCleanupPolicy");
+    return S_OK;
+}
+
+HRESULT WINAPI DriverFinalPolicy(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("DriverFinalPolicy");
+    return S_OK;
+}
+
+HRESULT WINAPI DriverInitializePolicy(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("DriverInitializePolicy");
+    return S_OK;
+}
+
+/* ============================================================================
+ * GENERIC POLICY FUNCTIONS
+ * ============================================================================ */
+
+HRESULT WINAPI GenericChainCertificateTrust(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("GenericChainCertificateTrust");
+    return S_OK;
+}
+
+HRESULT WINAPI GenericChainFinalProv(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("GenericChainFinalProv");
+    return S_OK;
+}
+
+HRESULT WINAPI HTTPSCertificateTrust(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("HTTPSCertificateTrust");
+    return S_OK;
+}
+
+HRESULT WINAPI HTTPSFinalProv(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("HTTPSFinalProv");
+    return S_OK;
+}
+
+HRESULT WINAPI OfficeCleanupPolicy(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("OfficeCleanupPolicy");
+    return S_OK;
+}
+
+HRESULT WINAPI OfficeInitializePolicy(CRYPT_PROVIDER_DATA* pProvData)
+{
+    LogD("OfficeInitializePolicy");
+    return S_OK;
+}
+
+/* ============================================================================
+ * ASN.1 ENCODING/DECODING FUNCTIONS
+ * ============================================================================ */
+
+BOOL WINAPI WVTAsn1CatMemberInfoDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                          DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                          void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1CatMemberInfoDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1CatMemberInfoEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1CatMemberInfoEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1CatNameValueDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                         DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                         void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1CatNameValueDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1CatNameValueEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1CatNameValueEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcFinancialCriteriaInfoDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                                      DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                                      void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcFinancialCriteriaInfoDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcFinancialCriteriaInfoEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcFinancialCriteriaInfoEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcIndirectDataContentDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                                    DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                                    void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcIndirectDataContentDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcIndirectDataContentEncode(LPCSTR lpszType, DWORD dwFlags, LPVOID pfnAlloc,
+                                                    LPVOID pfnFree, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcIndirectDataContentEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcLinkDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                     DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                     void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcLinkDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcLinkEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcLinkEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcPeImageDataDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                           DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                           void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcPeImageDataDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcPeImageDataEncode(LPCSTR lpszType, DWORD dwFlags, LPVOID pfnAlloc,
+                                           LPVOID pfnFree, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcPeImageDataEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcSigInfoDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                        DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                        void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcSigInfoDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcSigInfoEncode(LPCSTR lpszType, DWORD dwFlags, LPVOID pfnAlloc,
+                                        LPVOID pfnFree, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcSigInfoEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcSpAgencyInfoDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                             DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                             void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcSpAgencyInfoDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcSpAgencyInfoEncode(LPCSTR lpszType, DWORD dwFlags, LPVOID pfnAlloc,
+                                             LPVOID pfnFree, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcSpAgencyInfoEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcSpOpusInfoDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                           DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                           void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcSpOpusInfoDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcSpOpusInfoEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcSpOpusInfoEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcStatementTypeDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                              DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                              void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcStatementTypeDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcStatementTypeEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcStatementTypeEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+HRESULT WINAPI WintrustAddProviderToProcess(GUID* pgProvider, GUID* pgAction, WCHAR* pwszDll,
+                                                DWORD dwMajor, LPVOID psProvFuncs) {
+    LogD("WintrustAddProviderToProcess");
+    return S_OK;
+}
+
+HRESULT WINAPI WintrustGetHash(HANDLE hFile, LPCWSTR pwszFilePath, GUID* pgActionID,
+                                   LPVOID pvReserved, DWORD* pcbHash, BYTE* pbHash) {
+    LogD("WintrustGetHash");
+    
+    if (!pcbHash) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return E_INVALIDARG;
+    }
+    
+    if (!pbHash) {
+        *pcbHash = FAKE_HASH_SIZE;
+        return S_OK;
+    }
+    
+    if (*pcbHash < FAKE_HASH_SIZE) {
+        *pcbHash = FAKE_HASH_SIZE;
+        return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+    }
+    
+    DWORD seed = (DWORD)(ULONG_PTR)hFile ^ GetTickCount();
+    for (DWORD i = 0; i < FAKE_HASH_SIZE; i++) {
+        seed = seed * 1103515245 + 12345;
+        pbHash[i] = (BYTE)(seed >> 16);
+    }
+    *pcbHash = FAKE_HASH_SIZE;
+    
+    return S_OK;
+}
+
+BOOL WINAPI WintrustUserWriteabilityCheck(HWND hwnd, GUID* pgActionID) {
+    LogD("WintrustUserWriteabilityCheck");
+    return TRUE;
+}
+
+/* ============================================================================
+ * ADDITIONAL EXPORTED FUNCTIONS (missing stubs)
+ * ============================================================================ */
+
+BOOL WINAPI AddPersonalTrustDBPages(LPVOID lParam, DWORD dwFlags, LPVOID pvReserved) {
+    LogD("AddPersonalTrustDBPages");
+    return FALSE;
+}
+
+BOOL WINAPI CatalogCompactHashDatabase(LPVOID pvReserved) {
+    LogD("CatalogCompactHashDatabase");
+    return FALSE;
+}
+
+DWORD WINAPI ComputeFirstPageHash(HANDLE hFile, BYTE* pbHash, DWORD cbHash) {
+    LogD("ComputeFirstPageHash");
+    return 0;
+}
+
+HRESULT WINAPI ConfigCiFinalPolicy(LPVOID pProvData) {
+    LogD("ConfigCiFinalPolicy");
+    return S_OK;
+}
+
+HRESULT WINAPI ConfigCiPackageFamilyNameCheck(LPVOID pProvData) {
+    LogD("ConfigCiPackageFamilyNameCheck");
+    return S_OK;
+}
+
+BOOL WINAPI CryptCATAdminCalcHashFromFileHandle3(HCATADMIN hCatAdmin, HANDLE hFile,
+                                                     DWORD* pcbHash, BYTE* pbHash, DWORD dwFlags) {
+    LogD("CryptCATAdminCalcHashFromFileHandle3");
+    return CryptCATAdminCalcHashFromFileHandle(hFile, pcbHash, pbHash, dwFlags);
+}
+
+BOOL WINAPI CryptCATAdminPauseServiceForBackup(DWORD dwFlags, BOOL fResume) {
+    LogD("CryptCATAdminPauseServiceForBackup");
+    return TRUE;
+}
+
+CRYPTCATMEMBER* WINAPI CryptCATAllocSortedMemberInfo(HANDLE hCatalog, LPWSTR pwszReferenceName) {
+    LogD("CryptCATAllocSortedMemberInfo");
+    return NULL;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATCDFEnumAttributes(CRYPTCATCDF* pCDF, CRYPTCATMEMBER* pMember,
+                                                        CRYPTCATATTRIBUTE* pPrevAttr,
+                                                        PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError) {
+    LogD("CryptCATCDFEnumAttributes");
+    return NULL;
+}
+
+CRYPTCATATTRIBUTE* WINAPI CryptCATCDFEnumAttributesWithCDFTag(CRYPTCATCDF* pCDF, LPWSTR pwszMemberTag,
+                                                                  CRYPTCATMEMBER* pMember,
+                                                                  CRYPTCATATTRIBUTE* pPrevAttr,
+                                                                  PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError) {
+    LogD("CryptCATCDFEnumAttributesWithCDFTag");
+    return NULL;
+}
+
+CRYPTCATMEMBER* WINAPI CryptCATCDFEnumMembers(CRYPTCATCDF* pCDF, CRYPTCATMEMBER* pPrevMember,
+                                                 PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError) {
+    LogD("CryptCATCDFEnumMembers");
+    return NULL;
+}
+
+LPWSTR WINAPI CryptCATCDFEnumMembersByCDFTag(CRYPTCATCDF* pCDF, LPWSTR pwszPrevCDFTag,
+                                                PFN_CDF_PARSE_ERROR_CALLBACK pfnParseError,
+                                                CRYPTCATMEMBER** ppMember) {
+    LogD("CryptCATCDFEnumMembersByCDFTag");
+    return NULL;
+}
+
+void WINAPI CryptCATFreeSortedMemberInfo(HANDLE hCatalog, CRYPTCATMEMBER* pCatMember) {
+    LogD("CryptCATFreeSortedMemberInfo");
+}
+
+HANDLE WINAPI CryptCATHandleFromStore(CRYPTCATSTORE* pCatStore) {
+    LogD("CryptCATHandleFromStore");
+    return NULL;
+}
+
+CRYPTCATSTORE* WINAPI CryptCATStoreFromHandle(HANDLE hCatalog) {
+    LogD("CryptCATStoreFromHandle");
+    return NULL;
+}
+
+BOOL WINAPI CryptCATVerifyMember(HANDLE hCatalog, CRYPTCATMEMBER* pCatMember, DWORD dwFlags) {
+    LogD("CryptCATVerifyMember");
+    return TRUE;
+}
+
+BOOL WINAPI CryptSIPCreateIndirectData(SIP_SUBJECTINFO* pSubjectInfo, DWORD* pcbIndirectData,
+                                          SIP_INDIRECT_DATA* pIndirectData) {
+    LogD("CryptSIPCreateIndirectData");
+    return FALSE;
+}
+
+BOOL WINAPI CryptSIPGetCaps(SIP_SUBJECTINFO* pSubjInfo, SIP_CAP_SET* pCaps) {
+    LogD("CryptSIPGetCaps");
+    return FALSE;
+}
+
+BOOL WINAPI CryptSIPGetInfo(SIP_SUBJECTINFO* pSubjectInfo) {
+    LogD("CryptSIPGetInfo");
+    return FALSE;
+}
+
+BOOL WINAPI CryptSIPGetRegWorkingFlags(DWORD* pdwState) {
+    LogD("CryptSIPGetRegWorkingFlags");
+    if (pdwState) *pdwState = 0;
+    return TRUE;
+}
+
+BOOL WINAPI CryptSIPGetSealedDigest(SIP_SUBJECTINFO* pSubjectInfo, const BYTE* pbSig, DWORD cbSig,
+                                       BYTE* pbDigest, DWORD* pcbDigest) {
+    LogD("CryptSIPGetSealedDigest");
+    return FALSE;
+}
+
+BOOL WINAPI CryptSIPGetSignedDataMsg(SIP_SUBJECTINFO* pSubjectInfo, DWORD* pdwEncodingType,
+                                        DWORD dwIndex, DWORD* pcbSignedDataMsg, BYTE* pbSignedDataMsg) {
+    LogD("CryptSIPGetSignedDataMsg");
+    return FALSE;
+}
+
+BOOL WINAPI CryptSIPPutSignedDataMsg(SIP_SUBJECTINFO* pSubjectInfo, DWORD dwEncodingType,
+                                        DWORD* pdwIndex, DWORD cbSignedDataMsg, BYTE* pbSignedDataMsg) {
+    LogD("CryptSIPPutSignedDataMsg");
+    return FALSE;
+}
+
+BOOL WINAPI CryptSIPRemoveSignedDataMsg(SIP_SUBJECTINFO* pSubjectInfo, DWORD dwIndex) {
+    LogD("CryptSIPRemoveSignedDataMsg");
+    return FALSE;
+}
+
+BOOL WINAPI CryptSIPVerifyIndirectData(SIP_SUBJECTINFO* pSubjectInfo, SIP_INDIRECT_DATA* pIndirectData) {
+    LogD("CryptSIPVerifyIndirectData");
+    return TRUE;
+}
+
+HRESULT WINAPI DllRegisterServer(void) {
+    LogD("DllRegisterServer");
+    return S_OK;
+}
+
+HRESULT WINAPI DllUnregisterServer(void) {
+    LogD("DllUnregisterServer");
+    return S_OK;
+}
+
+HRESULT WINAPI FindCertsByIssuer(PCERT_CHAIN pCertChains, DWORD* pcbCertChains,
+                                    DWORD* pcCertChains, BYTE* pbEncodedIssuerName,
+                                    DWORD cbEncodedIssuerName, LPCWSTR pwszPurpose, DWORD dwKeySpec) {
+    LogD("FindCertsByIssuer");
+    if (pcbCertChains) *pcbCertChains = 0;
+    if (pcCertChains) *pcCertChains = 0;
+    return S_OK;
+}
+
+HRESULT WINAPI GetAuthenticodeSha256Hash(HANDLE hFile, BYTE* pbHash, DWORD cbHash) {
+    LogD("GetAuthenticodeSha256Hash");
+    return E_NOTIMPL;
+}
+
+BOOL WINAPI IsCatalogFile(HANDLE hFile, LPWSTR pwszFileName) {
+    LogD("IsCatalogFile: %ls", pwszFileName ? pwszFileName : L"(null)");
+    return FALSE;
+}
+
+LPWSTR WINAPI MsCatConstructHashTag(CRYPT_ATTRIBUTE* pAttr, DWORD* pcbHashTag) {
+    LogD("MsCatConstructHashTag");
+    if (pcbHashTag) *pcbHashTag = 0;
+    return NULL;
+}
+
+void WINAPI MsCatFreeHashTag(LPWSTR pwszHashTag) {
+    LogD("MsCatFreeHashTag");
+}
+
+BOOL WINAPI OpenPersonalTrustDBDialog(HWND hwndParent) {
+    LogD("OpenPersonalTrustDBDialog");
+    return FALSE;
+}
+
+BOOL WINAPI OpenPersonalTrustDBDialogEx(HWND hwndParent, DWORD dwFlags, LPVOID* ppvTrustInfo) {
+    LogD("OpenPersonalTrustDBDialogEx");
+    return FALSE;
+}
+
+BOOL WINAPI SetMessageDigestInfo(LPVOID pDigestInfo, DWORD cbDigestInfo, LPVOID pvReserved) {
+    LogD("SetMessageDigestInfo");
+    return FALSE;
+}
+
+void WINAPI SoftpubDumpStructure(CRYPT_PROVIDER_DATA* pProvData) {
+    LogD("SoftpubDumpStructure");
+}
+
+BOOL WINAPI SrpCheckSmartlockerEAandProcessToken(HANDLE hFile, HANDLE hToken, LPVOID pvReserved) {
+    LogD("SrpCheckSmartlockerEAandProcessToken");
+    return TRUE;
+}
+
+BOOL WINAPI TrustDecode(DWORD dwEncodingType, LPCSTR lpszStructType, const BYTE* pbEncoded,
+                          DWORD cbEncoded, DWORD dwFlags, void** ppvStructInfo, DWORD* pcbStructInfo) {
+    LogD("TrustDecode");
+    return FALSE;
+}
+
+PCCERT_CONTEXT WINAPI TrustFindIssuerCertificate(PCCERT_CONTEXT pChildCertContext, DWORD dwFlags,
+                                                     DWORD* pdwConfidence) {
+    LogD("TrustFindIssuerCertificate");
+    return NULL;
+}
+
+void WINAPI TrustFreeDecode(DWORD dwEncodingType, LPCSTR lpszStructType, void* pvStructInfo) {
+    LogD("TrustFreeDecode");
+}
+
+BOOL WINAPI TrustIsCertificateSelfSigned(PCCERT_CONTEXT pCertContext, DWORD dwEncoding, DWORD dwFlags) {
+    LogD("TrustIsCertificateSelfSigned");
+    return FALSE;
+}
+
+BOOL WINAPI TrustOpenStores(HCERTSTORE* phRootStore, HCERTSTORE* phTrustStore, DWORD dwFlags) {
+    LogD("TrustOpenStores");
+    return FALSE;
+}
+
+void WINAPI WTConfigCiFreePrivateData(LPVOID pvPrivateData) {
+    LogD("WTConfigCiFreePrivateData");
+}
+
+HRESULT WINAPI WTConvertCertCtxToChainInfo(PCCERT_CONTEXT pCertContext, LPVOID* ppChainInfo) {
+    LogD("WTConvertCertCtxToChainInfo");
+    return E_NOTIMPL;
+}
+
+HRESULT WINAPI WTGetBioSignatureInfo(HANDLE hFile, LPVOID pvReserved, LPVOID* ppBioInfo) {
+    LogD("WTGetBioSignatureInfo");
+    return E_NOTIMPL;
+}
+
+HRESULT WINAPI WTGetPluginSignatureInfo(HANDLE hFile, LPVOID pvReserved, LPVOID* ppPluginInfo) {
+    LogD("WTGetPluginSignatureInfo");
+    return E_NOTIMPL;
+}
+
+HRESULT WINAPI WTGetSignatureInfo(LPCWSTR pwszFile, HANDLE hFile, DWORD dwFlags,
+                                     LPVOID* ppSigInfo, LPVOID pvReserved) {
+    LogD("WTGetSignatureInfo: %ls", pwszFile ? pwszFile : L"(null)");
+    return E_NOTIMPL;
+}
+
+PCCERT_CONTEXT WINAPI WTHelperCertFindIssuerCertificate(PCCERT_CONTEXT pChildContext,
+                                                            DWORD chStores, HCERTSTORE* pahStores,
+                                                            FILETIME* psftVerifyAsOf, DWORD dwEncoding,
+                                                            DWORD* pdwConfidence, DWORD* pdwError) {
+    LogD("WTHelperCertFindIssuerCertificate");
+    return NULL;
+}
+
+HRESULT WINAPI WTHelperCheckCertUsage(PCCERT_CONTEXT pCertContext, LPCSTR pszOID) {
+    LogD("WTHelperCheckCertUsage");
+    return S_OK;
+}
+
+HRESULT WINAPI WTHelperGetAgencyInfo(PCCERT_CONTEXT pCertContext, LPVOID* ppAgencyInfo) {
+    LogD("WTHelperGetAgencyInfo");
+    return E_NOTIMPL;
+}
+
+HANDLE WINAPI WTHelperGetFileHandle(CRYPT_PROVIDER_DATA* pProvData) {
+    LogD("WTHelperGetFileHandle");
+    return INVALID_HANDLE_VALUE;
+}
+
+HRESULT WINAPI WTHelperGetFileHash(CRYPT_PROVIDER_DATA* pProvData, BYTE* pbHash,
+                                      DWORD* pcbHash, ALG_ID* pAlgId) {
+    LogD("WTHelperGetFileHash");
+    if (pcbHash && !pbHash) {
+        *pcbHash = FAKE_HASH_SIZE;
+        if (pAlgId) *pAlgId = CALG_SHA1;
+        return S_OK;
+    }
+    return E_NOTIMPL;
+}
+
+LPCWSTR WINAPI WTHelperGetFileName(CRYPT_PROVIDER_DATA* pProvData) {
+    LogD("WTHelperGetFileName");
+    return NULL;
+}
+
+HRESULT WINAPI WTHelperGetKnownUsages(DWORD dwAction, LPVOID* ppOIDInfo, DWORD* pcOIDInfo) {
+    LogD("WTHelperGetKnownUsages");
+    if (pcOIDInfo) *pcOIDInfo = 0;
+    return S_OK;
+}
+
+BOOL WINAPI WTHelperIsChainedToMicrosoft(PCCERT_CONTEXT pCertContext, BOOL fCheckMicrosoftTestRoot) {
+    LogD("WTHelperIsChainedToMicrosoft");
+    return FALSE;
+}
+
+BOOL WINAPI WTHelperIsChainedToMicrosoftFromStateData(CRYPT_PROVIDER_DATA* pProvData) {
+    LogD("WTHelperIsChainedToMicrosoftFromStateData");
+    return FALSE;
+}
+
+BOOL WINAPI WTHelperIsInRootStore(CRYPT_PROVIDER_CERT* pProvCert) {
+    LogD("WTHelperIsInRootStore");
+    return FALSE;
+}
+
+HRESULT WINAPI WTHelperOpenKnownStores(CRYPT_PROVIDER_DATA* pProvData) {
+    LogD("WTHelperOpenKnownStores");
+    return S_OK;
+}
+
+BOOL WINAPI WTIsFirstConfigCiResultPreferred(LPVOID pResult1, LPVOID pResult2) {
+    LogD("WTIsFirstConfigCiResultPreferred");
+    return TRUE;
+}
+
+void WINAPI WTLogConfigCiScriptEvent(LPVOID pProvData, DWORD dwEventId) {
+    LogD("WTLogConfigCiScriptEvent: eventId=%lu", dwEventId);
+}
+
+void WINAPI WTLogConfigCiScriptEvent2(LPVOID pProvData, DWORD dwEventId, LPVOID pvReserved) {
+    LogD("WTLogConfigCiScriptEvent2: eventId=%lu", dwEventId);
+}
+
+void WINAPI WTLogConfigCiSignerEvent(LPVOID pProvData, LPVOID pSigner, DWORD dwEventId) {
+    LogD("WTLogConfigCiSignerEvent: eventId=%lu", dwEventId);
+}
+
+HRESULT WINAPI WTValidateBioSignaturePolicy(LPVOID pProvData, LPVOID pBioInfo) {
+    LogD("WTValidateBioSignaturePolicy");
+    return S_OK;
+}
+
+BOOL WINAPI WVTAsn1CatMemberInfo2Decode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                           DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                           void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1CatMemberInfo2Decode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1CatMemberInfo2Encode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1CatMemberInfo2Encode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1IntentToSealAttributeDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                                   DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                                   void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1IntentToSealAttributeDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1IntentToSealAttributeEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1IntentToSealAttributeEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SealingSignatureAttributeDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                                       DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                                       void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SealingSignatureAttributeDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SealingSignatureAttributeEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SealingSignatureAttributeEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SealingTimestampAttributeDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                                       DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                                       void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SealingTimestampAttributeDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SealingTimestampAttributeEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SealingTimestampAttributeEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcMinimalCriteriaInfoDecode(LPCSTR lpszType, const BYTE* pbEncoded, DWORD cbEncoded,
+                                                    DWORD dwFlags, LPVOID pfnAlloc, LPVOID pfnFree,
+                                                    void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcMinimalCriteriaInfoDecode");
+    SetLastError(ERROR_INVALID_DATA);
+    return FALSE;
+}
+
+BOOL WINAPI WVTAsn1SpcMinimalCriteriaInfoEncode(LPCSTR lpszType, DWORD dwFlags, void* pvInfo, DWORD* pcbInfo) {
+    LogD("WVTAsn1SpcMinimalCriteriaInfoEncode");
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+LONG WINAPI WinVerifyTrustEx(HWND hwnd, GUID* pgActionID, WINTRUST_DATA* pWinTrustData) {
+    LogD("WinVerifyTrustEx (calling WinVerifyTrust)");
+    return WinVerifyTrust(hwnd, pgActionID, pWinTrustData);
+}
+
+BOOL WINAPI WintrustAddDefaultForUsage(const char* pszUsageOID, CRYPT_PROVIDER_REGDEFUSAGE* psDefUsage) {
+    LogD("WintrustAddDefaultForUsage");
+    return TRUE;
+}
+
+HRESULT WINAPI WintrustCertificateTrust(CRYPT_PROVIDER_DATA* pProvData) {
+    LogD("WintrustCertificateTrust");
+    return S_OK;
+}
+
+BOOL WINAPI WintrustGetDefaultForUsage(DWORD dwAction, const char* pszUsageOID,
+                                          CRYPT_PROVIDER_DEFUSAGE* psUsage) {
+    LogD("WintrustGetDefaultForUsage");
+    return FALSE;
+}
+
+void WINAPI WintrustSetDefaultIncludePEPageHashes(BOOL fIncludePEPageHashes) {
+    LogD("WintrustSetDefaultIncludePEPageHashes: %d", fIncludePEPageHashes);
+}
+
+HRESULT WINAPI mscat32DllRegisterServer(void) {
+    LogD("mscat32DllRegisterServer");
+    return S_OK;
+}
+
+HRESULT WINAPI mscat32DllUnregisterServer(void) {
+    LogD("mscat32DllUnregisterServer");
+    return S_OK;
+}
+
+HRESULT WINAPI mssip32DllRegisterServer(void) {
+    LogD("mssip32DllRegisterServer");
+    return S_OK;
+}
+
+HRESULT WINAPI mssip32DllUnregisterServer(void) {
+    LogD("mssip32DllUnregisterServer");
+    return S_OK;
+}
+
+/* ============================================================================
+ * DLL ENTRY POINT
+ * ============================================================================ */
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved)
+{
+    (void)lpReserved;
+    
+    switch (dwReason)
+    {
+    case DLL_PROCESS_ATTACH:
+    {
+        DisableThreadLibraryCalls(hModule);
+        
+        /* Initialize critical section */
+        InitializeCriticalSection(&g_lock);
+        
+#if ENABLE_FILE_LOGGING
+        InitializeCriticalSection(&g_logLock);
+#endif
+        
+        g_initialized = TRUE;
+        
+#if ENABLE_DEBUG_CONSOLE
+        /* Try to attach to existing console first (e.g., from iphlpapi) */
+        if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+            /* No existing console - create new one */
+            if (AllocConsole()) {
+                FILE* fDummy;
+                freopen_s(&fDummy, "CONOUT$", "w", stdout);
+                freopen_s(&fDummy, "CONOUT$", "w", stderr);
+                freopen_s(&fDummy, "CONIN$", "r", stdin);
+                SetConsoleTitleA("WINTRUST Emulator - Trust All Mode");
+            }
+        } else {
+            /* Attached to existing console - redirect stdout */
             FILE* fDummy;
             freopen_s(&fDummy, "CONOUT$", "w", stdout);
             freopen_s(&fDummy, "CONOUT$", "w", stderr);
-            freopen_s(&fDummy, "CONIN$", "r", stdin);
-            SetConsoleTitleA("Wintrust Stub Debug Console v1.0 (Final)");
-            printf("=========================================================\n");
-            printf("    Wintrust Stub Debug Console v1.0\n");
-            printf("    Build: %s %s\n", __DATE__, __TIME__);
-            printf("=========================================================\n\n");
         }
+        g_hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        
+        printf("\n");
+        printf("================================================\n");
+        printf("   WINTRUST EMULATOR v2.0\n");
+#if TRUST_MODE_TRUST_ALL
+        printf("   Mode: TRUST ALL (bypass signature checks)\n");
+#else
+        printf("   Mode: NO SIGNATURE (return TRUST_E_NOSIGNATURE)\n");
 #endif
-        LogInfo("=== WINTRUST STUB v1.0 LOADED ===");
-        break;
-    }
-    case DLL_PROCESS_DETACH: {
-        LogInfo("=== WINTRUST STUB v1.0 UNLOADING ===");
-        if (g_locks_initialized) {
-#if ENABLE_MEMORY_TRACKING
-            ReportMemoryLeaks();
+        printf("   Build: %s %s\n", __DATE__, __TIME__);
+        printf("================================================\n\n");
 #endif
-            LogInfo("Force-cleaning all object lists...");
-            CleanupObjectList(&g_wvt_state_list, &g_wvt_list_lock, "WVT State");
-            CleanupObjectList(&g_cat_admin_list, &g_cat_admin_list_lock, "CAT Admin");
-            CleanupObjectList(&g_cat_info_list, &g_cat_info_list_lock, "CAT Info");
-            CleanupObjectList(&g_cat_handle_list, &g_cat_handle_list_lock, "CAT Handle");
-            LogInfo("Object list cleanup complete.");
-#if ENABLE_MEMORY_TRACKING
-            CleanupAllMemory();
-#endif
-            DeleteCriticalSection(&g_wvt_list_lock);
-            DeleteCriticalSection(&g_cat_admin_list_lock);
-            DeleteCriticalSection(&g_cat_info_list_lock);
-            DeleteCriticalSection(&g_cat_handle_list_lock);
+        
 #if ENABLE_FILE_LOGGING
-            if (g_log_file) { fclose(g_log_file); g_log_file = NULL; }
-            DeleteCriticalSection(&g_log_lock);
+        {
+            char path[MAX_PATH], tmp[MAX_PATH];
+            if (GetTempPathA(MAX_PATH, tmp) > 0) {
+                snprintf(path, MAX_PATH, "%swintrust_%lu.log", tmp, GetCurrentProcessId());
+                g_logFile = fopen(path, "w");
+                if (g_logFile) {
+                    fprintf(g_logFile, "=== WINTRUST Emulator Log ===\n");
+                    fprintf(g_logFile, "Build: %s %s\n", __DATE__, __TIME__);
+                    fprintf(g_logFile, "PID: %lu\n", GetCurrentProcessId());
+#if TRUST_MODE_TRUST_ALL
+                    fprintf(g_logFile, "Mode: TRUST ALL\n");
+#else
+                    fprintf(g_logFile, "Mode: NO SIGNATURE\n");
 #endif
-#if ENABLE_MEMORY_TRACKING
-            DeleteCriticalSection(&g_memory_lock);
-#endif
-            g_locks_initialized = FALSE;
+                    fprintf(g_logFile, "Log file: %s\n\n", path);
+                    fflush(g_logFile);
+                }
+            }
         }
-#if ENABLE_DEBUG_CONSOLE
-        printf("\nStub Unloading Complete...\n"); Sleep(500); FreeConsole();
 #endif
+        
+        LogI("=== WINTRUST.DLL EMULATOR LOADED ===");
+        LogI("Process ID: %lu", GetCurrentProcessId());
+#if TRUST_MODE_TRUST_ALL
+        LogI("Trust Mode: TRUST ALL (WinVerifyTrust returns ERROR_SUCCESS)");
+#else
+        LogI("Trust Mode: NO SIGNATURE (WinVerifyTrust returns TRUST_E_NOSIGNATURE)");
+#endif
+        
         break;
     }
+    
+    case DLL_PROCESS_DETACH:
+    {
+        if (g_initialized) {
+            LogI("=== WINTRUST.DLL EMULATOR UNLOADING ===");
+            
+#if ENABLE_DEBUG_CONSOLE
+            if (g_hConsole && g_hConsole != INVALID_HANDLE_VALUE) {
+                printf("\n================================================\n");
+                printf("   WINTRUST EMULATOR UNLOADING\n");
+                printf("================================================\n");
+                Sleep(300);  /* Brief delay to see message */
+            }
+#endif
+            
+#if ENABLE_FILE_LOGGING
+            if (g_logFile) {
+                fprintf(g_logFile, "\n=== WINTRUST Emulator Unloading ===\n");
+                fflush(g_logFile);
+                fclose(g_logFile);
+                g_logFile = NULL;
+            }
+            DeleteCriticalSection(&g_logLock);
+#endif
+            
+            DeleteCriticalSection(&g_lock);
+            g_initialized = FALSE;
+        }
+        
+        break;
     }
+    
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+        /* Thread notifications disabled via DisableThreadLibraryCalls */
+        break;
+    }
+    
     return TRUE;
 }
+
+#ifdef __cplusplus
+}
+#endif
+
+/* ============================================================================
+ * END OF WINTRUST EMULATION
+ * ============================================================================ */
