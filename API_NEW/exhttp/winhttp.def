@@ -1,4 +1,4 @@
-LIBRARY winhttp
+LIBRARY "WINHTTP.dll"
 EXPORTS
     DllCanUnloadNow=ex_DllCanUnloadNow @1
     DllGetClassObject=ex_DllGetClassObject @2

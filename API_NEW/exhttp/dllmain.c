@@ -1,6 +1,5 @@
-﻿/*
- * WinHTTP Emulator - Wine-style with exws2 integration
- * Fixed for async mode and missing options
+/*
+ * WinHTTP Emulator
  */
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -28,6 +27,12 @@ extern "C" {
 #define ENABLE_FILE_LOGGING     0
 #define ENABLE_NETWORK_ATTEMPTS 1
 #define FORCE_OFFLINE_MODE      1
+
+// ============================================================================
+// GLOBAL STATE FLAGS (must be declared early for use in Log function)
+// ============================================================================
+static BOOL g_insideDllMain = FALSE;
+static BOOL g_consoleInitialized = FALSE;
 
 // ============================================================================
 // WINHTTP OPTION CONSTANTS
@@ -316,14 +321,26 @@ static void Log(const char *fmt, ...) {
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
+    
 #if ENABLE_DEBUG_CONSOLE
-    printf("[WINHTTP] %s\n", buf);
-    OutputDebugStringA("[WINHTTP] ");
-    OutputDebugStringA(buf);
-    OutputDebugStringA("\n");
+    // ✅ OutputDebugStringA - ЗАВЖДИ безпечний (навіть в DllMain)
+    char dbgBuf[2100];
+    snprintf(dbgBuf, sizeof(dbgBuf), "[WINHTTP] %s\n", buf);
+    OutputDebugStringA(dbgBuf);
+    
+    // ✅ printf - тільки якщо НЕ в DllMain і консоль ініціалізована
+    if (!g_insideDllMain && g_consoleInitialized) {
+        printf("%s", dbgBuf);
+    }
 #endif
+
 #if ENABLE_FILE_LOGGING
-    if (g_log_file) { fprintf(g_log_file, "%s\n", buf); fflush(g_log_file); }
+    // ✅ Файлове логування ТІЛЬКИ якщо НЕ в DllMain
+    if (!g_insideDllMain && g_log_file) {
+        fprintf(g_log_file, "%s
+", buf);
+        fflush(g_log_file);
+    }
 #endif
 }
 
@@ -334,6 +351,7 @@ static BOOL g_winsock_initialized = FALSE;
 static CRITICAL_SECTION g_winsock_cs;
 static BOOL g_winsock_cs_initialized = FALSE;
 
+
 typedef struct _SOCKET_CONNECTION {
     SOCKET sock;
     BOOL connected;
@@ -341,6 +359,23 @@ typedef struct _SOCKET_CONNECTION {
     WORD port;
     struct sockaddr_in addr;
 } SOCKET_CONNECTION;
+
+
+// ============================================================================
+// БЕЗПЕЧНА ініціалізація консолі (викликається поза DllMain)
+// ============================================================================
+static void InitConsole_Safe(void) {
+    if (g_consoleInitialized) return;
+    
+    if (g_insideDllMain) return;
+    
+#if ENABLE_DEBUG_CONSOLE
+    AllocConsole();
+    freopen("CONOUT$", "w", stdout);
+    SetConsoleTitleA("WinHTTP");
+    g_consoleInitialized = TRUE;
+#endif
+}
 
 static BOOL InitWinsock(void) {
     BOOL result = FALSE;
@@ -354,6 +389,8 @@ static BOOL InitWinsock(void) {
     
     if (!g_winsock_initialized) {
         WSADATA wsa;
+        InitConsole_Safe();
+        
         int err = WSAStartup(MAKEWORD(2, 2), &wsa);
         if (err == 0) {
             Log("WSAStartup via exws2: SUCCESS (version %d.%d)",
@@ -1182,22 +1219,33 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         DisableThreadLibraryCalls(hModule);
         ensure_handle_cs_initialized();
         
-#if ENABLE_DEBUG_CONSOLE
-        AllocConsole();
-        freopen("CONOUT$", "w", stdout);
-        SetConsoleTitleA("WinHTTP + exws2 Emulator");
-#endif
-
-        Log("========================================");
-        Log("WinHTTP Emulator Loaded");
-        Log("Mode: %s", FORCE_OFFLINE_MODE ? "OFFLINE" : "NETWORK ENABLED");
-        Log("========================================");
+        // ✅ ВАЖЛИВО: встановлюємо флаг що ми в DllMain
+        g_insideDllMain = TRUE;
         
-        InitWinsock();
+        // ✅ Тільки OutputDebugStringA - це безпечно під LoaderLock
+#if ENABLE_DEBUG_CONSOLE
+        OutputDebugStringA("[WINHTTP] ========================================\n");
+        OutputDebugStringA("[WINHTTP] WinHTTP Emulator Loaded\n");
+        OutputDebugStringA("[WINHTTP] Mode: ");
+        OutputDebugStringA(FORCE_OFFLINE_MODE ? "OFFLINE\n" : "NETWORK ENABLED\n");
+        OutputDebugStringA("[WINHTTP] ========================================\n");
+        OutputDebugStringA("[WINHTTP] NOTE: WinSock will be initialized lazily on first use\n");
+#endif
+        
+        // ✅ НЕ викликаємо InitWinsock() тут!
+        // Воно буде викликане lazy при першому використанні (WinHttpOpen)
+        
+        // ✅ Знімаємо флаг після виходу з DllMain
+        g_insideDllMain = FALSE;
         break;
 
     case DLL_PROCESS_DETACH:
-        Log("=== WinHTTP Emulator Unloading ===");
+        g_insideDllMain = TRUE;
+        
+#if ENABLE_DEBUG_CONSOLE
+        OutputDebugStringA("[WINHTTP] === WinHTTP Emulator Unloading ===\n");
+#endif
+        
         CleanupWinsock();
         
         if (g_winsock_cs_initialized) {
@@ -1214,9 +1262,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
             max_handles = 0;
             next_handle = 0;
         }
+        
+        // ✅ FreeConsole тільки якщо консоль була ініціалізована
 #if ENABLE_DEBUG_CONSOLE
-        FreeConsole();
+        if (g_consoleInitialized) {
+            FreeConsole();
+            g_consoleInitialized = FALSE;
+        }
 #endif
+        
+        g_insideDllMain = FALSE;
         break;
     }
     return TRUE;
@@ -1230,6 +1285,11 @@ HINTERNET WINAPI ex_WinHttpOpen(LPCWSTR agent, DWORD access, LPCWSTR proxy, LPCW
     HINTERNET handle = NULL;
 
     Log("WinHttpOpen(Agent:'%S', Access:%lu, Flags:0x%lX)", agent ? agent : L"<null>", access, flags);
+    
+    // ✅ Lazy initialization WinSock (поза DllMain!)
+    if (!g_winsock_initialized) {
+        InitWinsock();
+    }
     
     if (flags & WINHTTP_FLAG_ASYNC) {
         Log("  -> ASYNC mode enabled");
@@ -1501,7 +1561,9 @@ BOOL WINAPI ex_WinHttpSendRequest(HINTERNET hrequest, LPCWSTR headers, DWORD hea
     
     send_callback(&request->hdr, WINHTTP_CALLBACK_STATUS_SENDING_REQUEST, NULL, 0);
     
-#if ENABLE_NETWORK_ATTEMPTS
+    // FORCE_OFFLINE_MODE блокує всі мережеві спроби на рівні компіляції
+    // Це запобігає DNS-запитам, створенню сокетів та підключенням
+#if ENABLE_NETWORK_ATTEMPTS && !FORCE_OFFLINE_MODE
     if (!request->socket_conn) {
         WORD port = request->connect->hostport;
         
@@ -1543,9 +1605,7 @@ BOOL WINAPI ex_WinHttpSendRequest(HINTERNET hrequest, LPCWSTR headers, DWORD hea
                     Log("  -> Sent %d bytes", sent);
                     request->sent = TRUE;
                     send_callback(&request->hdr, WINHTTP_CALLBACK_STATUS_REQUEST_SENT, &sent, sizeof(DWORD));
-#if !FORCE_OFFLINE_MODE
                     success = TRUE;
-#endif
                 }
             }
         }
