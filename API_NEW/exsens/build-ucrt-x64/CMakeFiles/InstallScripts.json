@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"C:/PE-API/API/exsens/build-ucrt-x64/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
