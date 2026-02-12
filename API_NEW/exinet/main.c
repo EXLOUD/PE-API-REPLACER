@@ -1,9 +1,13 @@
-﻿#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
 #include "wininet_internal.h"
 
 // Глобальні змінні
 HINSTANCE g_hInst = NULL;
 BOOL g_wsInitialized = FALSE;
+
+// Змінні для безпечного логування
+static BOOL g_consoleInitialized = FALSE;
+static BOOL g_insideDllMain = FALSE;  
 
 // Ініціалізація WinSock через exws2.lib
 BOOL InitWinsock(void) {
@@ -31,7 +35,24 @@ void CleanupWinsock(void) {
     }
 }
 
-// Функція логування
+static void InitConsole_Safe(void) {
+    if (g_consoleInitialized) return;
+    
+    if (g_insideDllMain) return;
+    
+    if (ENABLE_DEBUG_CONSOLE) {
+        AllocConsole();
+        freopen("CONOUT$", "w", stdout);
+        freopen("CONOUT$", "w", stderr);
+        SetConsoleTitleA("WinINet Emulator (exws2.lib)");
+        
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+        
+        g_consoleInitialized = TRUE;
+    }
+}
+
 void Log(const char* fmt, ...) {
     if (!ENABLE_DEBUG_CONSOLE && !ENABLE_FILE_LOGGING) return;
 
@@ -41,8 +62,7 @@ void Log(const char* fmt, ...) {
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
 
-    // 1. Логування у файл
-    if (ENABLE_FILE_LOGGING) {
+    if (ENABLE_FILE_LOGGING && !g_insideDllMain) {
         char path[MAX_PATH];
         if (GetTempPathA(MAX_PATH, path)) {
             strcat(path, "wininet_debug.log");
@@ -57,38 +77,46 @@ void Log(const char* fmt, ...) {
         }
     }
 
-    // 2. Логування в консоль
     if (ENABLE_DEBUG_CONSOLE) {
+        if (!g_consoleInitialized && !g_insideDllMain) {
+            InitConsole_Safe();
+        }
+        
         char dbgBuf[2100];
         snprintf(dbgBuf, sizeof(dbgBuf), "[WININET] %s\n", buf);
+        
         OutputDebugStringA(dbgBuf);
-        printf("%s", dbgBuf);
+        
+        if (g_consoleInitialized) {
+            printf("%s", dbgBuf);
+        }
     }
 }
 
-// Точка входу в DLL
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         g_hInst = hinstDLL;
         DisableThreadLibraryCalls(hinstDLL);
         
-        // Ініціалізація консолі
+        g_insideDllMain = TRUE;
+        
         if (ENABLE_DEBUG_CONSOLE) {
-            AllocConsole();
-            freopen("CONOUT$", "w", stdout);
-            freopen("CONOUT$", "w", stderr);
-            SetConsoleTitleA("WinINet Emulator (exws2.lib)");
-            
-            HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-            SetConsoleTextAttribute(hConsole, FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+            OutputDebugStringA("[WININET] === WinINet Emulator Loaded ===\n");
+            OutputDebugStringA("[WININET] Using static linking with exws2.lib\n");
         }
         
-        Log("=== WinINet Emulator Loaded ===");
-        Log("Using static linking with exws2.lib");
+        g_insideDllMain = FALSE;
         
     } else if (fdwReason == DLL_PROCESS_DETACH) {
-        Log("=== WinINet Emulator Unloaded ===");
+        g_insideDllMain = TRUE;
+        
+        if (ENABLE_DEBUG_CONSOLE) {
+            OutputDebugStringA("[WININET] === WinINet Emulator Unloaded ===\n");
+        }
+        
         CleanupWinsock();
+        
+        g_insideDllMain = FALSE;
     }
     return TRUE;
 }

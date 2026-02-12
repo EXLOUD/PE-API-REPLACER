@@ -763,11 +763,16 @@ BOOL WINAPI ex_InternetGoOnline(
     return TRUE;
 }
 
-DWORD WINAPI ex_InternetAttemptConnect(
-    DWORD dwReserved)
+DWORD WINAPI ex_InternetAttemptConnect(DWORD dwReserved)
 {
-    Log("InternetAttemptConnect");
-    return ERROR_SUCCESS;
+#if !EMULATE_INTERNET_ONLINE
+ Log("InternetAttemptConnect: OFFLINE");
+ SetLastError(ERROR_INTERNET_DISCONNECTED);
+ return ERROR_INTERNET_DISCONNECTED;
+#else
+ Log("InternetAttemptConnect: ONLINE");
+ return ERROR_SUCCESS;
+#endif
 }
 
 BOOL WINAPI ex_InternetSetDialStateA(
@@ -815,60 +820,64 @@ BOOL WINAPI ex_InternetGetConnectedStateEx(
 // ============================================================
 
 BOOL WINAPI ex_HttpSendRequestExA(
-    HINTERNET hRequest,
-    LPINTERNET_BUFFERSA lpBuffersIn,
-    LPINTERNET_BUFFERSA lpBuffersOut,
-    DWORD dwFlags,
-    DWORD_PTR dwContext)
+ HINTERNET hRequest,
+ LPINTERNET_BUFFERSA lpBuffersIn,
+ LPINTERNET_BUFFERSA lpBuffersOut,
+ DWORD dwFlags,
+ DWORD_PTR dwContext)
 {
-    Log("HttpSendRequestExA");
-    
-    if (!hRequest) {
-        SetLastError(ERROR_INVALID_HANDLE);
-        return FALSE;
-    }
-    
-    HEADER* h = (HEADER*)hRequest;
-    
-    // Connect if not connected
-    if (h->sock == INVALID_SOCKET) {
-        struct hostent* he = gethostbyname(h->host);
-        if (!he) {
-            SetLastError(ERROR_INTERNET_NAME_NOT_RESOLVED);
-            return FALSE;
-        }
-        
-        h->sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (h->sock == INVALID_SOCKET) {
-            SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
-            return FALSE;
-        }
-        
-        struct sockaddr_in addr;
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(h->port);
-        memcpy(&addr.sin_addr, he->h_addr, he->h_length);
-        
-        if (connect(h->sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-            closesocket(h->sock);
-            h->sock = INVALID_SOCKET;
-            SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
-            return FALSE;
-        }
-    }
-    
-    // Send initial headers
-    char request[4096];
-    int len = snprintf(request, sizeof(request),
-        "%s %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Transfer-Encoding: chunked\r\n"
-        "\r\n",
-        h->verb, h->path, h->host);
-    
-    send(h->sock, request, len, 0);
-    
-    return TRUE;
+#if !EMULATE_INTERNET_ONLINE
+ Log("HttpSendRequestExA: OFFLINE mode - blocked");
+ SetLastError(ERROR_INTERNET_DISCONNECTED);
+ return FALSE;
+#endif
+
+ Log("HttpSendRequestExA");
+ if (!hRequest) {
+  SetLastError(ERROR_INVALID_HANDLE);
+  return FALSE;
+ }
+
+ HEADER* h = (HEADER*)hRequest;
+
+ // Connect if not connected
+ if (h->sock == INVALID_SOCKET) {
+  struct hostent* he = gethostbyname(h->host);
+  if (!he) {
+   SetLastError(ERROR_INTERNET_NAME_NOT_RESOLVED);
+   return FALSE;
+  }
+
+  h->sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (h->sock == INVALID_SOCKET) {
+   SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
+   return FALSE;
+  }
+
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(h->port);
+  memcpy(&addr.sin_addr, he->h_addr, he->h_length);
+
+  if (connect(h->sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+   closesocket(h->sock);
+   h->sock = INVALID_SOCKET;
+   SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
+   return FALSE;
+  }
+ }
+
+ // Send initial headers (chunked upload)
+ char request[4096];
+ int len = snprintf(request, sizeof(request),
+  "%s %s HTTP/1.1\r\n"
+  "Host: %s\r\n"
+  "Transfer-Encoding: chunked\r\n"
+  "\r\n",
+  h->verb, h->path, h->host);
+
+ send(h->sock, request, len, 0);
+ return TRUE;
 }
 
 BOOL WINAPI ex_HttpSendRequestExW(

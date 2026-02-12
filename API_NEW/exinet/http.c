@@ -184,74 +184,103 @@ HINTERNET WINAPI ex_InternetOpenW(LPCWSTR lpszAgent, DWORD dwAccessType,
 // InternetConnect
 // ============================================================
 
-HINTERNET WINAPI ex_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerName, 
-                                      INTERNET_PORT nServerPort, LPCSTR lpszUserName, 
-                                      LPCSTR lpszPassword, DWORD dwService, 
-                                      DWORD dwFlags, DWORD_PTR dwContext) {
-    if (!hInternet) {
-        SetLastError(ERROR_INVALID_HANDLE);
-        return NULL;
-    }
-    
-    HEADER* h = (HEADER*)calloc(1, sizeof(HEADER));
-    if (!h) {
-        SetLastError(ERROR_INTERNET_OUT_OF_HANDLES);
-        return NULL;
-    }
-    
-    h->parent = hInternet;
-    h->context = dwContext;
-    h->sock = INVALID_SOCKET;
-    h->flags = dwFlags;
-    h->content_length = (DWORD)-1;
-    
-    // Встановлюємо порт за замовчуванням
-    if (nServerPort == INTERNET_INVALID_PORT_NUMBER) {
-        switch (dwService) {
-            case INTERNET_SERVICE_FTP:
-                h->port = INTERNET_DEFAULT_FTP_PORT;
-                break;
-            case INTERNET_SERVICE_HTTP:
-                h->port = (dwFlags & INTERNET_FLAG_SECURE) ? 
-                          INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
-                break;
-            default:
-                h->port = INTERNET_DEFAULT_HTTP_PORT;
-        }
-    } else {
-        h->port = nServerPort;
-    }
-    
-    if (lpszServerName) {
-        strncpy(h->host, lpszServerName, sizeof(h->host) - 1);
-        h->host[sizeof(h->host) - 1] = '\0';
-    }
-    
-    switch (dwService) {
-        case INTERNET_SERVICE_FTP:
-            h->type = HANDLE_FTP_CONNECT;
-            Log("InternetConnectA: FTP to %s:%d", h->host, (int)h->port);
-            break;
-        case INTERNET_SERVICE_HTTP:
-        default:
-            h->type = HANDLE_HTTP_CONNECT;
-            Log("InternetConnectA: HTTP to %s:%d", h->host, (int)h->port);
-            break;
-    }
-    
-    return (HINTERNET)h;
+HINTERNET WINAPI ex_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerName,
+ INTERNET_PORT nServerPort, LPCSTR lpszUserName,
+ LPCSTR lpszPassword, DWORD dwService,
+ DWORD dwFlags, DWORD_PTR dwContext)
+{
+ // SOFT OFFLINE: handle створюємо завжди, а мережеві дії блокуються у HttpSendRequest*
+#if !EMULATE_INTERNET_ONLINE
+ Log("InternetConnectA: OFFLINE (soft) - returning connect handle (server='%s', service=%lu)",
+     lpszServerName ? lpszServerName : "NULL", (unsigned long)dwService);
+#endif
+
+ if (!hInternet) {
+  SetLastError(ERROR_INVALID_HANDLE);
+  return NULL;
+ }
+
+ HEADER* h = (HEADER*)calloc(1, sizeof(HEADER));
+ if (!h) {
+  SetLastError(ERROR_INTERNET_OUT_OF_HANDLES);
+  return NULL;
+ }
+
+ h->parent = hInternet;
+ h->context = dwContext;
+ h->sock = INVALID_SOCKET;
+ h->flags = dwFlags;
+ h->content_length = (DWORD)-1;
+
+ // Якщо порт не заданий — ставимо дефолтний по сервісу
+ if (nServerPort == INTERNET_INVALID_PORT_NUMBER) {
+  switch (dwService) {
+  case INTERNET_SERVICE_FTP:
+   h->port = INTERNET_DEFAULT_FTP_PORT;
+   break;
+  case INTERNET_SERVICE_HTTP:
+   h->port = (dwFlags & INTERNET_FLAG_SECURE) ?
+    INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+   break;
+  default:
+   h->port = INTERNET_DEFAULT_HTTP_PORT;
+   break;
+  }
+ } else {
+  h->port = nServerPort;
+ }
+
+ // host
+ if (lpszServerName) {
+  strncpy(h->host, lpszServerName, sizeof(h->host) - 1);
+  h->host[sizeof(h->host) - 1] = '\0';
+ } else {
+  h->host[0] = '\0';
+ }
+
+ // Тип handle по сервісу
+ switch (dwService) {
+ case INTERNET_SERVICE_FTP:
+  h->type = HANDLE_FTP_CONNECT;
+  Log("InternetConnectA: FTP to %s:%d (flags=0x%lX)",
+      h->host, (int)h->port, (unsigned long)dwFlags);
+  break;
+
+ case INTERNET_SERVICE_HTTP:
+ default:
+  h->type = HANDLE_HTTP_CONNECT;
+  Log("InternetConnectA: HTTP to %s:%d (flags=0x%lX)",
+      h->host, (int)h->port, (unsigned long)dwFlags);
+  break;
+ }
+
+ // username/password зараз не використовуються — лишимо лог
+ if (lpszUserName || lpszPassword) {
+  Log("InternetConnectA: credentials provided (ignored)");
+ }
+
+ return (HINTERNET)h;
 }
 
-HINTERNET WINAPI ex_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerName, 
-                                      INTERNET_PORT nServerPort, LPCWSTR lpszUserName, 
-                                      LPCWSTR lpszPassword, DWORD dwService, 
-                                      DWORD dwFlags, DWORD_PTR dwContext) {
-    char serverA[INTERNET_MAX_HOST_NAME_LENGTH] = {0};
-    if (lpszServerName) {
-        WideCharToMultiByte(CP_ACP, 0, lpszServerName, -1, serverA, sizeof(serverA), NULL, NULL);
-    }
-    return ex_InternetConnectA(hInternet, serverA, nServerPort, NULL, NULL, 
-                                dwService, dwFlags, dwContext);
+HINTERNET WINAPI ex_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerName,
+ INTERNET_PORT nServerPort, LPCWSTR lpszUserName,
+ LPCWSTR lpszPassword, DWORD dwService,
+ DWORD dwFlags, DWORD_PTR dwContext)
+{
+ // SOFT OFFLINE: handle створюємо завжди, а мережеві дії блокуються у HttpSendRequest*
+#if !EMULATE_INTERNET_ONLINE
+ Log("InternetConnectW: OFFLINE (soft) - returning connect handle");
+#endif
+
+ char serverA[INTERNET_MAX_HOST_NAME_LENGTH] = {0};
+ if (lpszServerName) {
+  WideCharToMultiByte(CP_ACP, 0, lpszServerName, -1,
+                      serverA, sizeof(serverA), NULL, NULL);
+ }
+
+ // як і було: username/password ігноруємо
+ return ex_InternetConnectA(hInternet, serverA, nServerPort, NULL, NULL,
+                           dwService, dwFlags, dwContext);
 }
 
 // ============================================================
@@ -383,132 +412,140 @@ BOOL WINAPI ex_HttpAddRequestHeadersW(HINTERNET hRequest, LPCWSTR lpszHeaders,
 // HttpSendRequest - ПОВНА РЕАЛІЗАЦІЯ
 // ============================================================
 
-BOOL WINAPI ex_HttpSendRequestA(HINTERNET hRequest, LPCSTR lpszHeaders, 
-                                 DWORD dwHeadersLength, LPVOID lpOptional, 
-                                 DWORD dwOptionalLength) {
-    if (!hRequest) {
-        SetLastError(ERROR_INVALID_HANDLE);
-        return FALSE;
-    }
-    
-    HEADER* h = (HEADER*)hRequest;
-    
-    Log("HttpSendRequestA: %s %s://%s:%d%s", 
-        h->verb, (h->flags & INTERNET_FLAG_SECURE) ? "https" : "http", 
-        h->host, (int)h->port, h->path);
-    
-    // Перевірка на HTTPS (не підтримується без SSL)
-    if (h->flags & INTERNET_FLAG_SECURE) {
-        Log("HttpSendRequestA: HTTPS not supported in this emulation");
-        SetLastError(ERROR_INTERNET_SECURITY_CHANNEL_ERROR);
-        return FALSE;
-    }
-    
-    // Резолвимо хост
-    struct hostent* he = gethostbyname(h->host);
-    if (!he) {
-        Log("HttpSendRequestA: gethostbyname failed for '%s'", h->host);
-        SetLastError(ERROR_INTERNET_NAME_NOT_RESOLVED);
-        return FALSE;
-    }
-    
-    // Створюємо сокет
-    h->sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (h->sock == INVALID_SOCKET) {
-        Log("HttpSendRequestA: socket() failed");
-        SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
-        return FALSE;
-    }
-    
-    // Підключаємось
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(h->port);
-    memcpy(&addr.sin_addr, he->h_addr, he->h_length);
-    
-    Log("HttpSendRequestA: connecting to %s:%d...", h->host, (int)h->port);
-    
-    if (connect(h->sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-        Log("HttpSendRequestA: connect() failed, error %d", WSAGetLastError());
-        closesocket(h->sock);
-        h->sock = INVALID_SOCKET;
-        SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
-        return FALSE;
-    }
-    
-    Log("HttpSendRequestA: connected!");
-    
-    // Формуємо HTTP запит
-    char request[8192];
-    int request_len = snprintf(request, sizeof(request),
-        "%s %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Connection: close\r\n"
-        "User-Agent: WinINet-Emulator/1.0\r\n",
-        h->verb, h->path, h->host);
-    
-    // Додаємо Content-Length для POST
-    if (lpOptional && dwOptionalLength > 0) {
-        request_len += snprintf(request + request_len, sizeof(request) - request_len,
-            "Content-Length: %lu\r\n", (unsigned long)dwOptionalLength);
-    }
-    
-    // Додаємо custom headers
-    if (lpszHeaders && dwHeadersLength > 0) {
-        DWORD headers_len = (dwHeadersLength == (DWORD)-1) ? 
-                            (DWORD)strlen(lpszHeaders) : dwHeadersLength;
-        if ((DWORD)request_len + headers_len < sizeof(request) - 4) {
-            memcpy(request + request_len, lpszHeaders, headers_len);
-            request_len += (int)headers_len;
-        }
-    }
-    
-    // Додаємо збережені headers
-    if (h->request_headers && h->request_headers_len > 0) {
-        if ((DWORD)request_len + h->request_headers_len < sizeof(request) - 4) {
-            memcpy(request + request_len, h->request_headers, h->request_headers_len);
-            request_len += (int)h->request_headers_len;
-        }
-    }
-    
-    // Закінчуємо заголовки
-    request_len += snprintf(request + request_len, sizeof(request) - request_len, "\r\n");
-    
-    Log("HttpSendRequestA: sending request (%d bytes)", request_len);
-    
-    // Відправляємо заголовки
-    if (send(h->sock, request, request_len, 0) == SOCKET_ERROR) {
-        Log("HttpSendRequestA: send() failed");
-        closesocket(h->sock);
-        h->sock = INVALID_SOCKET;
-        SetLastError(ERROR_INTERNET_CONNECTION_ABORTED);
-        return FALSE;
-    }
-    
-    // Відправляємо тіло (POST data)
-    if (lpOptional && dwOptionalLength > 0) {
-        if (send(h->sock, (const char*)lpOptional, (int)dwOptionalLength, 0) == SOCKET_ERROR) {
-            Log("HttpSendRequestA: send body failed");
-            closesocket(h->sock);
-            h->sock = INVALID_SOCKET;
-            SetLastError(ERROR_INTERNET_CONNECTION_ABORTED);
-            return FALSE;
-        }
-        Log("HttpSendRequestA: sent %lu bytes of body", (unsigned long)dwOptionalLength);
-    }
-    
-    // Парсимо response headers
-    if (!ParseHttpHeaders(h)) {
-        Log("HttpSendRequestA: failed to parse response headers");
-        closesocket(h->sock);
-        h->sock = INVALID_SOCKET;
-        SetLastError(ERROR_HTTP_INVALID_SERVER_RESPONSE);
-        return FALSE;
-    }
-    
-    Log("HttpSendRequestA: SUCCESS - status %lu %s", 
-        (unsigned long)h->status_code, h->status_text);
-    return TRUE;
+BOOL WINAPI ex_HttpSendRequestA(HINTERNET hRequest, LPCSTR lpszHeaders,
+ DWORD dwHeadersLength, LPVOID lpOptional,
+ DWORD dwOptionalLength) {
+
+#if !EMULATE_INTERNET_ONLINE
+ Log("HttpSendRequestA: OFFLINE mode - blocked");
+ SetLastError(ERROR_INTERNET_DISCONNECTED);
+ return FALSE;
+#endif
+
+ if (!hRequest) {
+  SetLastError(ERROR_INVALID_HANDLE);
+  return FALSE;
+ }
+
+ HEADER* h = (HEADER*)hRequest;
+ Log("HttpSendRequestA: %s %s://%s:%d%s",
+  h->verb, (h->flags & INTERNET_FLAG_SECURE) ? "https" : "http",
+  h->host, (int)h->port, h->path);
+
+ // HTTPS не підтримується в цій емуляції
+ if (h->flags & INTERNET_FLAG_SECURE) {
+  Log("HttpSendRequestA: HTTPS not supported in this emulation");
+  SetLastError(ERROR_INTERNET_SECURITY_CHANNEL_ERROR);
+  return FALSE;
+ }
+
+ // DNS
+ struct hostent* he = gethostbyname(h->host);
+ if (!he) {
+  Log("HttpSendRequestA: gethostbyname failed for '%s'", h->host);
+  SetLastError(ERROR_INTERNET_NAME_NOT_RESOLVED);
+  return FALSE;
+ }
+
+ // Socket
+ h->sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+ if (h->sock == INVALID_SOCKET) {
+  Log("HttpSendRequestA: socket() failed");
+  SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
+  return FALSE;
+ }
+
+ // Connect
+ struct sockaddr_in addr;
+ addr.sin_family = AF_INET;
+ addr.sin_port = htons(h->port);
+ memcpy(&addr.sin_addr, he->h_addr, he->h_length);
+
+ Log("HttpSendRequestA: connecting to %s:%d...", h->host, (int)h->port);
+ if (connect(h->sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+  Log("HttpSendRequestA: connect() failed, error %d", WSAGetLastError());
+  closesocket(h->sock);
+  h->sock = INVALID_SOCKET;
+  SetLastError(ERROR_INTERNET_CANNOT_CONNECT);
+  return FALSE;
+ }
+ Log("HttpSendRequestA: connected!");
+
+ // Build HTTP request
+ char request[8192];
+ int request_len = snprintf(request, sizeof(request),
+  "%s %s HTTP/1.1\r\n"
+  "Host: %s\r\n"
+  "Connection: close\r\n"
+  "User-Agent: WinINet-Emulator/1.0\r\n",
+  h->verb, h->path, h->host);
+
+ // Content-Length якщо є тіло (POST)
+ if (lpOptional && dwOptionalLength > 0) {
+  request_len += snprintf(request + request_len, sizeof(request) - request_len,
+   "Content-Length: %lu\r\n", (unsigned long)dwOptionalLength);
+ }
+
+ // Custom headers (передані прямо в HttpSendRequestA)
+ if (lpszHeaders) {
+  DWORD headers_len = 0;
+  if (dwHeadersLength == (DWORD)-1) headers_len = (DWORD)strlen(lpszHeaders);
+  else headers_len = dwHeadersLength;
+
+  if (headers_len > 0) {
+   if ((DWORD)request_len + headers_len < sizeof(request) - 4) {
+    memcpy(request + request_len, lpszHeaders, headers_len);
+    request_len += (int)headers_len;
+   }
+  }
+ }
+
+ // Headers, які додали HttpAddRequestHeadersA
+ if (h->request_headers && h->request_headers_len > 0) {
+  if ((DWORD)request_len + h->request_headers_len < sizeof(request) - 4) {
+   memcpy(request + request_len, h->request_headers, h->request_headers_len);
+   request_len += (int)h->request_headers_len;
+  }
+ }
+
+ // End headers
+ request_len += snprintf(request + request_len, sizeof(request) - request_len, "\r\n");
+
+ Log("HttpSendRequestA: sending request (%d bytes)", request_len);
+
+ if (send(h->sock, request, request_len, 0) == SOCKET_ERROR) {
+  Log("HttpSendRequestA: send() failed");
+  closesocket(h->sock);
+  h->sock = INVALID_SOCKET;
+  SetLastError(ERROR_INTERNET_CONNECTION_ABORTED);
+  return FALSE;
+ }
+
+ // Send body
+ if (lpOptional && dwOptionalLength > 0) {
+  if (send(h->sock, (const char*)lpOptional, (int)dwOptionalLength, 0) == SOCKET_ERROR) {
+   Log("HttpSendRequestA: send body failed");
+   closesocket(h->sock);
+   h->sock = INVALID_SOCKET;
+   SetLastError(ERROR_INTERNET_CONNECTION_ABORTED);
+   return FALSE;
+  }
+  Log("HttpSendRequestA: sent %lu bytes of body", (unsigned long)dwOptionalLength);
+ }
+
+ // Parse response headers
+ if (!ParseHttpHeaders(h)) {
+  Log("HttpSendRequestA: failed to parse response headers");
+  closesocket(h->sock);
+  h->sock = INVALID_SOCKET;
+  SetLastError(ERROR_HTTP_INVALID_SERVER_RESPONSE);
+  return FALSE;
+ }
+
+ Log("HttpSendRequestA: SUCCESS - status %lu %s",
+  (unsigned long)h->status_code, h->status_text);
+
+ return TRUE;
 }
 
 BOOL WINAPI ex_HttpSendRequestW(HINTERNET hRequest, LPCWSTR lpszHeaders, 
@@ -886,62 +923,90 @@ BOOL WINAPI ex_InternetCloseHandle(HINTERNET hInternet) {
 // InternetQueryOption / InternetSetOption
 // ============================================================
 
-BOOL WINAPI ex_InternetQueryOptionA(HINTERNET hInternet, DWORD dwOption, 
-                                     LPVOID lpBuffer, LPDWORD lpdwBufferLength) {
-    Log("InternetQueryOptionA: option=%lu", (unsigned long)dwOption);
-    
-    switch (dwOption) {
-        case INTERNET_OPTION_HANDLE_TYPE:
-            if (*lpdwBufferLength >= sizeof(DWORD)) {
-                if (hInternet) {
-                    HEADER* h = (HEADER*)hInternet;
-                    *(DWORD*)lpBuffer = (DWORD)h->type;
-                } else {
-                    *(DWORD*)lpBuffer = 0;
-                }
-                *lpdwBufferLength = sizeof(DWORD);
-                return TRUE;
-            }
-            *lpdwBufferLength = sizeof(DWORD);
-            SetLastError(ERROR_INSUFFICIENT_BUFFER);
-            return FALSE;
-            
-        case INTERNET_OPTION_URL:
-            if (hInternet) {
-                HEADER* h = (HEADER*)hInternet;
-                char url[INTERNET_MAX_URL_LENGTH];
-                int len = snprintf(url, sizeof(url), "http://%s:%d%s", 
-                                   h->host, (int)h->port, h->path);
-                if (*lpdwBufferLength > (DWORD)len) {
-                    strcpy((char*)lpBuffer, url);
-                    *lpdwBufferLength = (DWORD)len;
-                    return TRUE;
-                }
-                *lpdwBufferLength = (DWORD)len + 1;
-                SetLastError(ERROR_INSUFFICIENT_BUFFER);
-                return FALSE;
-            }
-            break;
-            
-        case INTERNET_OPTION_SECURITY_FLAGS:
-            if (*lpdwBufferLength >= sizeof(DWORD)) {
-                *(DWORD*)lpBuffer = 0; // No security
-                *lpdwBufferLength = sizeof(DWORD);
-                return TRUE;
-            }
-            break;
-            
-        case INTERNET_OPTION_CONNECTED_STATE:
-            if (*lpdwBufferLength >= sizeof(DWORD)) {
-                *(DWORD*)lpBuffer = INTERNET_STATE_CONNECTED;
-                *lpdwBufferLength = sizeof(DWORD);
-                return TRUE;
-            }
-            break;
-    }
-    
-    SetLastError(ERROR_INTERNET_INVALID_OPTION);
-    return FALSE;
+BOOL WINAPI ex_InternetQueryOptionA(HINTERNET hInternet, DWORD dwOption,
+ LPVOID lpBuffer, LPDWORD lpdwBufferLength) {
+
+ Log("InternetQueryOptionA: option=%lu", (unsigned long)dwOption);
+
+ switch (dwOption) {
+
+ case INTERNET_OPTION_HANDLE_TYPE:
+  if (!lpdwBufferLength) {
+   SetLastError(ERROR_INVALID_PARAMETER);
+   return FALSE;
+  }
+  if (*lpdwBufferLength >= sizeof(DWORD)) {
+   if (hInternet) {
+    HEADER* h = (HEADER*)hInternet;
+    *(DWORD*)lpBuffer = (DWORD)h->type;
+   } else {
+    *(DWORD*)lpBuffer = 0;
+   }
+   *lpdwBufferLength = sizeof(DWORD);
+   return TRUE;
+  }
+  *lpdwBufferLength = sizeof(DWORD);
+  SetLastError(ERROR_INSUFFICIENT_BUFFER);
+  return FALSE;
+
+ case INTERNET_OPTION_URL:
+  if (!lpdwBufferLength) {
+   SetLastError(ERROR_INVALID_PARAMETER);
+   return FALSE;
+  }
+  if (hInternet) {
+   HEADER* h = (HEADER*)hInternet;
+   char url[INTERNET_MAX_URL_LENGTH];
+   int len = snprintf(url, sizeof(url), "http://%s:%d%s",
+    h->host, (int)h->port, h->path);
+
+   if (lpBuffer && *lpdwBufferLength > (DWORD)len) {
+    strcpy((char*)lpBuffer, url);
+    *lpdwBufferLength = (DWORD)len;
+    return TRUE;
+   }
+
+   *lpdwBufferLength = (DWORD)len + 1;
+   SetLastError(ERROR_INSUFFICIENT_BUFFER);
+   return FALSE;
+  }
+  break;
+
+ case INTERNET_OPTION_SECURITY_FLAGS:
+  if (!lpdwBufferLength) {
+   SetLastError(ERROR_INVALID_PARAMETER);
+   return FALSE;
+  }
+  if (*lpdwBufferLength >= sizeof(DWORD)) {
+   *(DWORD*)lpBuffer = 0; // No security
+   *lpdwBufferLength = sizeof(DWORD);
+   return TRUE;
+  }
+  *lpdwBufferLength = sizeof(DWORD);
+  SetLastError(ERROR_INSUFFICIENT_BUFFER);
+  return FALSE;
+
+ case INTERNET_OPTION_CONNECTED_STATE:
+  if (!lpdwBufferLength) {
+   SetLastError(ERROR_INVALID_PARAMETER);
+   return FALSE;
+  }
+  if (*lpdwBufferLength >= sizeof(DWORD)) {
+#if EMULATE_INTERNET_ONLINE
+   *(DWORD*)lpBuffer = INTERNET_STATE_CONNECTED;
+#else
+   *(DWORD*)lpBuffer = INTERNET_STATE_DISCONNECTED;
+#endif
+   *lpdwBufferLength = sizeof(DWORD);
+   return TRUE;
+  }
+  *lpdwBufferLength = sizeof(DWORD);
+  SetLastError(ERROR_INSUFFICIENT_BUFFER);
+  return FALSE;
+ }
+
+ SetLastError(ERROR_INTERNET_INVALID_OPTION);
+ return FALSE;
 }
 
 BOOL WINAPI ex_InternetQueryOptionW(HINTERNET hInternet, DWORD dwOption, 
@@ -984,79 +1049,85 @@ BOOL WINAPI ex_InternetSetOptionW(HINTERNET hInternet, DWORD dwOption,
 // ============================================================
 
 HINTERNET WINAPI ex_InternetOpenUrlA(HINTERNET hInternet, LPCSTR lpszUrl,
-                                      LPCSTR lpszHeaders, DWORD dwHeadersLength,
-                                      DWORD dwFlags, DWORD_PTR dwContext) {
-    if (!hInternet || !lpszUrl) {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return NULL;
-    }
-    
-    Log("InternetOpenUrlA: %s", lpszUrl);
-    
-    // Простий парсинг URL
-    char host[INTERNET_MAX_HOST_NAME_LENGTH] = {0};
-    char path[INTERNET_MAX_PATH_LENGTH] = "/";
-    INTERNET_PORT port = INTERNET_DEFAULT_HTTP_PORT;
-    BOOL secure = FALSE;
-    
-    const char* p = lpszUrl;
-    
-    // Skip scheme
-    if (_strnicmp(p, "https://", 8) == 0) {
-        secure = TRUE;
-        port = INTERNET_DEFAULT_HTTPS_PORT;
-        p += 8;
-    } else if (_strnicmp(p, "http://", 7) == 0) {
-        p += 7;
-    }
-    
-    // Parse host
-    const char* host_end = p;
-    while (*host_end && *host_end != ':' && *host_end != '/' && *host_end != '?') {
-        host_end++;
-    }
-    size_t host_len = host_end - p;
-    if (host_len >= sizeof(host)) host_len = sizeof(host) - 1;
-    strncpy(host, p, host_len);
-    host[host_len] = '\0';
-    
-    p = host_end;
-    
-    // Parse port
-    if (*p == ':') {
-        p++;
-        port = (INTERNET_PORT)atoi(p);
-        while (*p >= '0' && *p <= '9') p++;
-    }
-    
-    // Parse path
-    if (*p == '/' || *p == '?') {
-        strncpy(path, p, sizeof(path) - 1);
-        path[sizeof(path) - 1] = '\0';
-    }
-    
-    // Create handles
-    DWORD flags = dwFlags;
-    if (secure) flags |= INTERNET_FLAG_SECURE;
-    
-    HINTERNET hConnect = ex_InternetConnectA(hInternet, host, port, NULL, NULL,
-                                              INTERNET_SERVICE_HTTP, flags, dwContext);
-    if (!hConnect) return NULL;
-    
-    HINTERNET hRequest = ex_HttpOpenRequestA(hConnect, "GET", path, NULL, NULL, NULL,
-                                              flags, dwContext);
-    if (!hRequest) {
-        ex_InternetCloseHandle(hConnect);
-        return NULL;
-    }
-    
-    if (!ex_HttpSendRequestA(hRequest, lpszHeaders, dwHeadersLength, NULL, 0)) {
-        ex_InternetCloseHandle(hRequest);
-        ex_InternetCloseHandle(hConnect);
-        return NULL;
-    }
-    
-    return hRequest;
+ LPCSTR lpszHeaders, DWORD dwHeadersLength,
+ DWORD dwFlags, DWORD_PTR dwContext) {
+
+#if !EMULATE_INTERNET_ONLINE
+ Log("InternetOpenUrlA: OFFLINE mode - blocked");
+ SetLastError(ERROR_INTERNET_DISCONNECTED);
+ return NULL;
+#endif
+
+ if (!hInternet || !lpszUrl) {
+  SetLastError(ERROR_INVALID_PARAMETER);
+  return NULL;
+ }
+
+ Log("InternetOpenUrlA: %s", lpszUrl);
+
+ // Parse URL
+ char host[INTERNET_MAX_HOST_NAME_LENGTH] = {0};
+ char path[INTERNET_MAX_PATH_LENGTH] = "/";
+ INTERNET_PORT port = INTERNET_DEFAULT_HTTP_PORT;
+ BOOL secure = FALSE;
+
+ const char* p = lpszUrl;
+
+ // scheme
+ if (_strnicmp(p, "https://", 8) == 0) {
+  secure = TRUE;
+  port = INTERNET_DEFAULT_HTTPS_PORT;
+  p += 8;
+ } else if (_strnicmp(p, "http://", 7) == 0) {
+  p += 7;
+ }
+
+ // host
+ const char* host_end = p;
+ while (*host_end && *host_end != ':' && *host_end != '/' && *host_end != '?') {
+  host_end++;
+ }
+ size_t host_len = host_end - p;
+ if (host_len >= sizeof(host)) host_len = sizeof(host) - 1;
+ strncpy(host, p, host_len);
+ host[host_len] = '\0';
+ p = host_end;
+
+ // port
+ if (*p == ':') {
+  p++;
+  port = (INTERNET_PORT)atoi(p);
+  while (*p >= '0' && *p <= '9') p++;
+ }
+
+ // path/query
+ if (*p == '/' || *p == '?') {
+  strncpy(path, p, sizeof(path) - 1);
+  path[sizeof(path) - 1] = '\0';
+ }
+
+ // Create handles
+ DWORD flags = dwFlags;
+ if (secure) flags |= INTERNET_FLAG_SECURE;
+
+ HINTERNET hConnect = ex_InternetConnectA(hInternet, host, port, NULL, NULL,
+  INTERNET_SERVICE_HTTP, flags, dwContext);
+ if (!hConnect) return NULL;
+
+ HINTERNET hRequest = ex_HttpOpenRequestA(hConnect, "GET", path, NULL, NULL, NULL,
+  flags, dwContext);
+ if (!hRequest) {
+  ex_InternetCloseHandle(hConnect);
+  return NULL;
+ }
+
+ if (!ex_HttpSendRequestA(hRequest, lpszHeaders, dwHeadersLength, NULL, 0)) {
+  ex_InternetCloseHandle(hRequest);
+  ex_InternetCloseHandle(hConnect);
+  return NULL;
+ }
+
+ return hRequest;
 }
 
 HINTERNET WINAPI ex_InternetOpenUrlW(HINTERNET hInternet, LPCWSTR lpszUrl,
@@ -1093,41 +1164,160 @@ HINTERNET WINAPI ex_InternetOpenUrlW(HINTERNET hInternet, LPCWSTR lpszUrl,
 // ============================================================
 
 BOOL WINAPI ex_InternetGetConnectedState(LPDWORD lpdwFlags, DWORD dwReserved) {
-    if (lpdwFlags) {
-        *lpdwFlags = INTERNET_CONNECTION_LAN | INTERNET_CONNECTION_CONFIGURED;
-    }
-    return TRUE;
+    Log("InternetGetConnectedState called");
+
+#if EMULATE_INTERNET_ONLINE
+    return ex_InternetGetConnectedStateExW(lpdwFlags, NULL, 0, dwReserved);
+#else
+    if (lpdwFlags) 
+        *lpdwFlags = INTERNET_CONNECTION_OFFLINE | INTERNET_CONNECTION_CONFIGURED;
+    SetLastError(ERROR_INTERNET_DISCONNECTED);
+    return FALSE;
+#endif
 }
 
-BOOL WINAPI ex_InternetGetConnectedStateExA(LPDWORD lpdwFlags, LPSTR lpszConnectionName,
-                                             DWORD cchNameLen, DWORD dwReserved) {
-    if (lpdwFlags) {
-        *lpdwFlags = INTERNET_CONNECTION_LAN | INTERNET_CONNECTION_CONFIGURED;
+// ============================================================================
+// InternetGetConnectedStateExA - ANSI обгортка
+// ============================================================================
+BOOL WINAPI ex_InternetGetConnectedStateExA(
+    LPDWORD lpdwStatus, 
+    LPSTR lpszConnectionName, 
+    DWORD dwNameLen, 
+    DWORD dwReserved)
+{
+    LPWSTR lpwszConnectionName = NULL;
+    BOOL rc;
+
+    Log("InternetGetConnectedStateExA called");
+
+    if (lpszConnectionName && dwNameLen > 0)
+        lpwszConnectionName = malloc(dwNameLen * sizeof(WCHAR));
+
+    rc = ex_InternetGetConnectedStateExW(lpdwStatus, lpwszConnectionName, dwNameLen, dwReserved);
+
+    if (rc && lpwszConnectionName) {
+        WideCharToMultiByte(CP_ACP, 0, lpwszConnectionName, -1, lpszConnectionName, dwNameLen, NULL, NULL);
+        lpszConnectionName[dwNameLen - 1] = '\0';
     }
-    if (lpszConnectionName && cchNameLen > 0) {
-        strncpy(lpszConnectionName, "Local Area Connection", cchNameLen - 1);
-        lpszConnectionName[cchNameLen - 1] = '\0';
-    }
-    return TRUE;
+
+    free(lpwszConnectionName);
+    return rc;
 }
 
-BOOL WINAPI ex_InternetGetConnectedStateExW(LPDWORD lpdwFlags, LPWSTR lpszConnectionName,
-                                             DWORD cchNameLen, DWORD dwReserved) {
-    if (lpdwFlags) {
-        *lpdwFlags = INTERNET_CONNECTION_LAN | INTERNET_CONNECTION_CONFIGURED;
+BOOL WINAPI ex_InternetGetConnectedStateExW(
+    LPDWORD lpdwStatus, 
+    LPWSTR lpszConnectionName, 
+    DWORD dwNameLen, 
+    DWORD dwReserved)
+{
+    Log("InternetGetConnectedStateExW called");
+
+    if (dwReserved) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
     }
-    if (lpszConnectionName && cchNameLen > 0) {
-        wcsncpy(lpszConnectionName, L"Local Area Connection", cchNameLen - 1);
-        lpszConnectionName[cchNameLen - 1] = L'\0';
+
+#if EMULATE_INTERNET_ONLINE
+    IP_ADAPTER_ADDRESSES *buf = NULL, *aa;
+    ULONG size = 0;
+    DWORD status;
+
+    // Цикл виклику GetAdaptersAddresses з динамічним виділенням пам'яті
+    for (;;) {
+        ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | 
+                      GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_GATEWAYS;
+        ULONG errcode = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, buf, &size);
+
+        if (errcode == ERROR_SUCCESS)
+            break;
+
+        free(buf);
+        if (errcode == ERROR_BUFFER_OVERFLOW && !(buf = malloc(size)))
+            errcode = ERROR_NOT_ENOUGH_MEMORY;
+
+        if (errcode != ERROR_BUFFER_OVERFLOW) {
+            if (errcode != ERROR_NO_DATA) {
+                SetLastError(errcode);
+                return FALSE;
+            }
+            buf = NULL;
+            break;
+        }
     }
+
+    status = INTERNET_RAS_INSTALLED;
+
+    // Перебір адаптерів
+    for (aa = buf; aa; aa = aa->Next) {
+        // Пропускаємо loopback та tunnel
+        if (aa->IfType == IF_TYPE_SOFTWARE_LOOPBACK || aa->IfType == IF_TYPE_TUNNEL)
+            continue;
+
+        // Підключено, але не обов'язково до інтернету
+        if (aa->FirstUnicastAddress)
+            status |= INTERNET_CONNECTION_OFFLINE;
+
+        // Підключено до інтернету (є gateway)
+        if (aa->FirstGatewayAddress) {
+            Log("Found adapter with gateway: %S (type %lu, status %d)", 
+                aa->FriendlyName, aa->IfType, aa->OperStatus);
+
+            status &= ~INTERNET_CONNECTION_OFFLINE;
+            status |= INTERNET_CONNECTION_LAN | INTERNET_CONNECTION_CONFIGURED;
+
+            // Зберігаємо ім'я першого підключення з gateway
+            if (lpszConnectionName && dwNameLen > 0) {
+                wcsncpy(lpszConnectionName, aa->FriendlyName, dwNameLen - 1);
+                lpszConnectionName[dwNameLen - 1] = L'\0';
+            }
+            break;
+        }
+    }
+
+    free(buf);
+
+    if (lpdwStatus) 
+        *lpdwStatus = status;
+
+    // Якщо немає жодного типу з'єднання - повертаємо FALSE
+    if (!(status & (INTERNET_CONNECTION_LAN | INTERNET_CONNECTION_MODEM | INTERNET_CONNECTION_PROXY))) {
+        Log("No active connection found");
+        SetLastError(ERROR_SUCCESS);
+        return FALSE;
+    }
+
+    Log("Connection status: 0x%lX", status);
     return TRUE;
+
+#else
+    // EMULATE_INTERNET_ONLINE відключено - немає інтернету
+    if (lpdwStatus) 
+        *lpdwStatus = INTERNET_CONNECTION_OFFLINE | INTERNET_CONNECTION_CONFIGURED;
+    
+    if (lpszConnectionName && dwNameLen > 0) 
+        lpszConnectionName[0] = L'\0';
+    
+    SetLastError(ERROR_INTERNET_DISCONNECTED);
+    return FALSE;
+#endif
 }
 
 BOOL WINAPI ex_InternetCheckConnectionA(LPCSTR lpszUrl, DWORD dwFlags, DWORD dwReserved) {
-    Log("InternetCheckConnectionA: %s", lpszUrl ? lpszUrl : "NULL");
-    return TRUE; // Always connected
+#if EMULATE_INTERNET_ONLINE
+ Log("InternetCheckConnectionA: %s", lpszUrl ? lpszUrl : "NULL");
+ return TRUE;
+#else
+ Log("InternetCheckConnectionA: OFFLINE");
+ SetLastError(ERROR_INTERNET_DISCONNECTED);
+ return FALSE;
+#endif
 }
 
 BOOL WINAPI ex_InternetCheckConnectionW(LPCWSTR lpszUrl, DWORD dwFlags, DWORD dwReserved) {
-    return TRUE;
+#if EMULATE_INTERNET_ONLINE
+ return TRUE;
+#else
+ SetLastError(ERROR_INTERNET_DISCONNECTED);
+ return FALSE;
+#endif
 }

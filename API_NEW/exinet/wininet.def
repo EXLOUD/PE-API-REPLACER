@@ -1,4 +1,4 @@
-LIBRARY WININET
+LIBRARY "WININET.dll"
 EXPORTS
     AppCacheCheckManifest=ex_AppCacheCheckManifest @106
     AppCacheCloseHandle=ex_AppCacheCloseHandle @107
