@@ -1,5 +1,5 @@
-LIBRARY SENSAPI
+LIBRARY sensapi
 EXPORTS
-    IsDestinationReachableA=ex_IsDestinationReachableA
-    IsDestinationReachableW=ex_IsDestinationReachableW
-    IsNetworkAlive=ex_IsNetworkAlive
+    IsDestinationReachableA = ex_IsDestinationReachableA     @1
+    IsDestinationReachableW = ex_IsDestinationReachableW     @2
+    IsNetworkAlive = ex_IsNetworkAlive                       @3

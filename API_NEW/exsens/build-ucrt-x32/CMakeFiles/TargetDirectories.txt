@@ -1,0 +1,3 @@
+C:/PE-API/API/exsens/build-ucrt-x32/CMakeFiles/EXSENS.dir
+C:/PE-API/API/exsens/build-ucrt-x32/CMakeFiles/edit_cache.dir
+C:/PE-API/API/exsens/build-ucrt-x32/CMakeFiles/rebuild_cache.dir
