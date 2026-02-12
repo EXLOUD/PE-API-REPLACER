@@ -1,3 +1,0 @@
-C:/Users/EXLOUD/Downloads/!!!Windows-Update-Pauser-main/exhttp/build-ucrt-arm64/CMakeFiles/EXHTTP.dir
-C:/Users/EXLOUD/Downloads/!!!Windows-Update-Pauser-main/exhttp/build-ucrt-arm64/CMakeFiles/edit_cache.dir
-C:/Users/EXLOUD/Downloads/!!!Windows-Update-Pauser-main/exhttp/build-ucrt-arm64/CMakeFiles/rebuild_cache.dir
