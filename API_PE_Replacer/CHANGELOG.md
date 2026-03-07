@@ -2,6 +2,77 @@
 
 ---
 
+## [1.0.13] — 2026-03-07
+
+### Fixed
+- **Context menu corners transparent on Linux** — replaced the default `QMenu` with a
+  `DarkMenu(QMenu)` subclass that sets `WA_TranslucentBackground`,
+  `FramelessWindowHint`, and `NoDropShadowWindowHint`, so rounded corners are truly
+  transparent instead of showing opaque background pixels outside the border-radius.
+- **Log selection lost on right-click** — `QTextEdit` lost focus on right-click,
+  clearing the selection before the context menu appeared. Fixed by saving
+  `selectionStart` / `selectionEnd` before showing the menu and restoring the cursor
+  with `KeepAnchor` afterwards.
+- **Log selection color changed to grey when unfocused** — when the context menu stole
+  focus, Qt switched the `QTextEdit` to the `Inactive` palette group, rendering the
+  highlight grey. Fixed by copying the `Active` `Highlight` and `HighlightedText`
+  palette colors into the `Inactive` group via `QPalette`.
+- **Message dialog text not centered** — all `QMessageBox` dialogs displayed
+  left-aligned text. Introduced `CenteredMessageBox(QMessageBox)` which overrides
+  `showEvent` to apply `AlignHCenter | AlignVCenter` to every text `QLabel`, and two
+  helpers `_msg()` / `_msg_question()` that replace all eight former static calls to
+  `QMessageBox.warning`, `QMessageBox.information`, and `QMessageBox.question`.
+- **About dialog — no spacing between info card and donations section** — the
+  `donations_panel` had `setContentsMargins(0, 0, 0, 0)`; changed top margin to `16px`
+  so the "Support" section is visually separated from the title/author card.
+
+### Improved
+- **Dark-themed log context menu** — added `QMenu` styling to `REFINED_STYLESHEET`
+  (`bg_elevated` background, rounded items, `bg_overlay` hover, muted separator) and
+  wired it via `CustomContextMenu` policy so the system menu is never shown.
+- **Font selection on all platforms** — at startup `QApplication` now iterates
+  `Inter → Segoe UI → DejaVu Sans → Liberation Sans → Noto Sans` and sets the first
+  font for which `QFont.exactMatch()` returns `True`. Eliminates the
+  `OpenType support missing for "Adwaita Sans"` Qt warning on GNOME/Fedora and ensures
+  a consistent sans-serif face on Windows and macOS as well.
+- **Folder search dialog replaced with resizable `QDialog`** — the subfolder-search
+  prompt was a `QMessageBox` whose buttons had a fixed size and could not adapt to the
+  window dimensions. Replaced with `FolderSearchDialog(QDialog)`: the window is
+  resizable (`setSizeGripEnabled`), the three buttons sit in a `QHBoxLayout` with equal
+  stretch factor so they always fill the full width, the primary action uses
+  `variant="primary"` styling, and the text label wraps and stays centred at any size.
+- **About dialog now maximisable on Windows** — `setFixedSize` replaced with
+  `setMinimumSize` and `WindowMaximizeButtonHint` added to window flags, so double-
+  clicking the title bar or pressing the maximise button correctly expands the window on
+  Windows (Linux already handled this natively).
+- **"Show every time" checkbox styled consistently across platforms** — on Linux the
+  checkbox in the Language Selection dialog used the system GTK appearance instead of
+  the application dark theme. Applied a scoped `setStyleSheet` directly on
+  `show_again_checkbox` with accent-coloured indicator (`bg_overlay` background,
+  rounded corners, `accent` fill when checked). The API-list checkboxes in the main
+  window are intentionally left with their default system style.
+
+### Code Quality
+- **W0246 — useless parent delegation** — removed the trivial `__init__` from
+  `CenteredMessageBox` that only called `super().__init__(*args, **kwargs)` with no
+  additional logic.
+
+### Performance
+- **File addition speed** — replaced `lief.PE.parse()` in `FileProcessorWorker` with a
+  manual raw-header read (`_read_pe_info`): reads only ~88 bytes from two offsets
+  (DOS header + COFF header) instead of parsing the full PE structure. On large DLLs
+  this can be orders of magnitude faster. Additionally, `update_stats()` is now called
+  once after the entire batch completes instead of after every single file, and
+  duplicate detection switched from `O(n²)` `any()` to an `O(n)` set lookup.
+
+### Added
+- **ARM64 architecture detection** — `_read_pe_info` now recognises machine type
+  `0xAA64` (`IMAGE_FILE_MACHINE_ARM64`) and tags the file as `arm64` in the file list.
+  Previously only `x86` and `x64` were detected; ARM64 binaries were silently shown as
+  `x86`.
+
+---
+
 ## [1.0.12] — 2026-03-05
 
 ### Fixed

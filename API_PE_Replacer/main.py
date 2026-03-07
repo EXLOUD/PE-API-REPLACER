@@ -39,13 +39,13 @@ from PySide6.QtWidgets import (  # pylint: disable=no-name-in-module
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTextEdit, QFrame, QFileDialog, QMessageBox, QCheckBox, QDialog,
     QProgressBar, QScrollArea, QGraphicsDropShadowEffect,
-    QGroupBox, QSplitter, QTextBrowser,
+    QGroupBox, QSplitter, QTextBrowser, QMenu,
 )
 from PySide6.QtCore import (  # pylint: disable=no-name-in-module
     QThread, QObject, Signal, Qt, QTranslator, QLibraryInfo, QTimer,
     QPropertyAnimation, QPoint, QEasingCurve, QParallelAnimationGroup,
 )
-from PySide6.QtGui import QColor  # pylint: disable=no-name-in-module
+from PySide6.QtGui import QColor, QFont, QPalette  # pylint: disable=no-name-in-module
 
 try:
     from config import DLL_REPLACEMENTS
@@ -160,8 +160,141 @@ REFINED_STYLESHEET = f"""
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal, QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ width: 0; background: transparent; }}
     QAbstractScrollArea::corner {{ background-color: transparent; }}
     QDialog, QMessageBox {{ background-color: {REFINED_PALETTE['bg_secondary']}; }}
-    QMessageBox QLabel {{ color: {REFINED_PALETTE['text']}; }}
+    QMessageBox QLabel {{ color: {REFINED_PALETTE['text']}; qproperty-alignment: AlignCenter; }}
+    QMenu {{
+        background-color: {REFINED_PALETTE['bg_elevated']};
+        color: {REFINED_PALETTE['text']};
+        border: 1px solid {REFINED_PALETTE['border_hover']};
+        border-radius: 8px;
+        padding: 4px;
+    }}
+    QMenu::item {{
+        padding: 8px 20px 8px 12px;
+        border-radius: 4px;
+        background-color: transparent;
+    }}
+    QMenu::item:selected {{
+        background-color: {REFINED_PALETTE['bg_overlay']};
+        color: {REFINED_PALETTE['text']};
+    }}
+    QMenu::item:disabled {{
+        color: {REFINED_PALETTE['text_disabled']};
+    }}
+    QMenu::separator {{
+        height: 1px;
+        background-color: {REFINED_PALETTE['border']};
+        margin: 4px 8px;
+    }}
 """
+
+
+class DarkMenu(QMenu):
+    """QMenu subclass with WA_TranslucentBackground for truly transparent rounded corners on Linux."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowFlags(
+            self.windowFlags()
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint
+        )
+
+
+class CenteredMessageBox(QMessageBox):
+    """QMessageBox subclass that centres the message text both horizontally and vertically."""
+
+    def showEvent(self, event):
+        """Center-align the text label every time the dialog is shown."""
+        super().showEvent(event)
+        for label in self.findChildren(QLabel):
+            # Skip the icon label (it has a pixmap, not text)
+            if label.text():
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+                )
+                label.setMinimumWidth(label.sizeHint().width())
+
+
+def _msg(icon, parent, title, text):
+    """Create, configure, and exec a CenteredMessageBox; return the result."""
+    box = CenteredMessageBox(icon, title, text, QMessageBox.StandardButton.Ok, parent)
+    box.exec()
+
+
+def _msg_question(parent, title, text):
+    """Show a Yes/No CenteredMessageBox and return True if Yes was clicked."""
+    box = CenteredMessageBox(
+        QMessageBox.Icon.Question, title, text,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        parent,
+    )
+    return box.exec() == QMessageBox.StandardButton.Yes
+
+
+class FolderSearchDialog(QDialog):
+    """Dialog asking whether to search subfolders recursively.
+
+    Buttons stretch to fill the full dialog width and the whole window is
+    resizable, matching the main application style.
+    """
+
+    # Result constants
+    RECURSIVE  = 1
+    FOLDER_ONLY = 2
+    CANCELLED  = 3
+
+    def __init__(self, parent, translator):
+        """Build the dialog layout."""
+        super().__init__(parent)
+        self.translator = translator
+        self.result_choice = self.CANCELLED
+        self.setWindowTitle(translator.get("dialog_search_option"))
+        self.setMinimumWidth(380)
+        self.setSizeGripEnabled(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(20)
+
+        text = QLabel(translator.get("dialog_search_subfolders"))
+        text.setWordWrap(True)
+        text.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        text.setStyleSheet(f"color: {REFINED_PALETTE['text']}; font-size: 13px;")
+        layout.addWidget(text)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        yes_btn = QPushButton(translator.get("dialog_yes_recursive"))
+        yes_btn.setProperty("variant", "primary")
+        yes_btn.setSizePolicy(yes_btn.sizePolicy().horizontalPolicy(),
+                              yes_btn.sizePolicy().verticalPolicy())
+        yes_btn.clicked.connect(self._on_yes)
+
+        no_btn = QPushButton(translator.get("dialog_no_folder_only"))
+        no_btn.clicked.connect(self._on_no)
+
+        cancel_btn = QPushButton(translator.get("dialog_cancel"))
+        cancel_btn.clicked.connect(self._on_cancel)
+
+        for btn in (yes_btn, no_btn, cancel_btn):
+            btn.setMinimumHeight(40)
+            btn_layout.addWidget(btn, 1)   # stretch factor 1 → equal width
+
+        layout.addLayout(btn_layout)
+
+    def _on_yes(self):
+        self.result_choice = self.RECURSIVE
+        self.accept()
+
+    def _on_no(self):
+        self.result_choice = self.FOLDER_ONLY
+        self.accept()
+
+    def _on_cancel(self):
+        self.result_choice = self.CANCELLED
+        self.reject()
 
 
 def create_subtle_shadow():
@@ -493,37 +626,60 @@ class FileProcessorWorker(QObject):
         super().__init__()
         self.file_paths = file_paths
 
+    @staticmethod
+    def _read_pe_info(path):
+        """Extract PE type and architecture by reading raw header bytes only.
+
+        Avoids a full lief.PE.parse call — reads just enough bytes to locate
+        the COFF header and inspect machine type and characteristics.
+        Returns (type_str, arch_str) or ('PE', 'x86') on any read error.
+        """
+        try:
+            with open(path, 'rb') as f:
+                dos = f.read(64)
+                if len(dos) < 64 or dos[:2] != b'MZ':
+                    return 'PE', 'x86'
+                pe_offset = int.from_bytes(dos[60:64], 'little')
+                f.seek(pe_offset)
+                coff = f.read(24)           # PE\0\0 + 20-byte COFF header
+            if len(coff) < 24 or coff[:4] != b'PE\x00\x00':
+                return 'PE', 'x86'
+            machine      = int.from_bytes(coff[4:6],  'little')
+            characteristics = int.from_bytes(coff[22:24], 'little')
+            arch = 'x64' if machine == 0x8664 else ('arm64' if machine == 0xAA64 else 'x86')
+            if characteristics & 0x2000:
+                pe_type = 'DLL'
+            elif characteristics & 0x0002:
+                pe_type = 'EXE'
+            else:
+                pe_type = 'PE'
+            return pe_type, arch
+        except Exception:  # pylint: disable=broad-exception-caught
+            return 'PE', 'x86'
+
     def run(self):
         """Validate each file as a PE and emit metadata; emit totals when done."""
         added = 0
         error = 0
         for path in self.file_paths:
             try:
-                with open(path, 'rb') as f:
-                    if f.read(2) != b'MZ':
+                pe_type, arch = self._read_pe_info(path)
+                if pe_type == 'PE' and arch == 'x86':
+                    # Verify MZ signature was valid (read_pe_info returns defaults on error)
+                    try:
+                        with open(path, 'rb') as f:
+                            if f.read(2) != b'MZ':
+                                error += 1
+                                continue
+                    except Exception:  # pylint: disable=broad-exception-caught
                         error += 1
                         continue
-                info = {'path': path, 'size': os.path.getsize(path), 'type': 'PE', 'arch': 'x86'}
-                try:
-                    binary = lief.PE.parse(path)
-                    if binary is not None:
-                        chars = binary.header.characteristics
-                        if chars & 0x2000:
-                            info['type'] = 'DLL'
-                        elif chars & 0x0002:
-                            info['type'] = 'EXE'
-                        else:
-                            info['type'] = 'PE'
-                        try:
-                            info['arch'] = (
-                                'x64'
-                                if binary.header.machine == lief.PE.MACHINE_TYPES.AMD64
-                                else 'x86'
-                            )
-                        except Exception:  # pylint: disable=broad-exception-caught
-                            info['arch'] = 'x64' if int(binary.header.machine) == 0x8664 else 'x86'
-                except Exception as exc:  # pylint: disable=broad-exception-caught
-                    print(f"⚠️ Warning: could not read PE metadata: {exc}")
+                info = {
+                    'path': path,
+                    'size': os.path.getsize(path),
+                    'type': pe_type,
+                    'arch': arch,
+                }
                 self.file_processed.emit(info)
                 added += 1
             except Exception:  # pylint: disable=broad-exception-caught
@@ -899,6 +1055,26 @@ class LanguageDialog(QDialog):
 
             self.show_again_checkbox = QCheckBox("Show every time")
             self.show_again_checkbox.setChecked(True)
+            self.show_again_checkbox.setStyleSheet(f"""
+                QCheckBox {{ spacing: 8px; color: {REFINED_PALETTE['text_secondary']}; }}
+                QCheckBox::indicator {{
+                    width: 16px; height: 16px; border-radius: 4px;
+                    border: 1px solid {REFINED_PALETTE['text_muted']};
+                    background-color: {REFINED_PALETTE['bg_overlay']};
+                }}
+                QCheckBox::indicator:hover {{
+                    border-color: {REFINED_PALETTE['accent']};
+                }}
+                QCheckBox::indicator:checked {{
+                    background-color: {REFINED_PALETTE['accent']};
+                    border-color: {REFINED_PALETTE['accent']};
+                    image: url(none);
+                }}
+                QCheckBox::indicator:checked:hover {{
+                    background-color: {REFINED_PALETTE['accent_hover']};
+                    border-color: {REFINED_PALETTE['accent_hover']};
+                }}
+            """)
             main_layout.addWidget(self.show_again_checkbox)
 
     def set_language(self, lang_code):
@@ -1480,7 +1656,11 @@ class AboutDialog(QDialog):
         super().__init__(parent)
         self.translator = translator
         self.setWindowTitle(self.translator.get("about"))
-        self.setFixedSize(600, 690)
+        self.setMinimumSize(600, 690)
+        self.setWindowFlags(
+            self.windowFlags()
+            | Qt.WindowType.WindowMaximizeButtonHint
+        )
         self.setup_ui()
 
     def setup_ui(self):
@@ -1508,7 +1688,7 @@ class AboutDialog(QDialog):
 
         donations_panel = QWidget()
         donations_panel_layout = QVBoxLayout(donations_panel)
-        donations_panel_layout.setContentsMargins(0, 0, 0, 0)
+        donations_panel_layout.setContentsMargins(0, 16, 0, 0)
         donations_panel_layout.setSpacing(8)
 
         title_label = QLabel(self.translator.get("donation_title"))
@@ -1875,6 +2055,17 @@ class PEPatcherGUI(QMainWindow):
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
+        self.log_text.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.log_text.customContextMenuRequested.connect(self._show_log_context_menu)
+
+        # Keep selection highlight blue (Active color) even when widget loses focus
+        _palette = self.log_text.palette()
+        _hl_color = _palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight)
+        _hl_text  = _palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.HighlightedText)
+        _palette.setColor(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Highlight, _hl_color)
+        _palette.setColor(QPalette.ColorGroup.Inactive, QPalette.ColorRole.HighlightedText, _hl_text)
+        self.log_text.setPalette(_palette)
+
         self.log_text.setStyleSheet(
             f"QTextEdit {{ padding: 20px; border: none; border-radius: 0;"
             f" border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;"
@@ -1958,7 +2149,7 @@ class PEPatcherGUI(QMainWindow):
 
     def show_task_error(self, title_key, message):
         """Show a warning dialog for a task-manager error."""
-        QMessageBox.warning(self, self.translator.get(title_key), message)
+        _msg(QMessageBox.Icon.Warning, self, self.translator.get(title_key), message)
 
     def add_files(self):
         """Open a file picker and queue the selected PE files."""
@@ -1973,22 +2164,11 @@ class PEPatcherGUI(QMainWindow):
 
     def add_folder(self):
         """Prompt for sub-folder option, pick a folder, and launch the scan dialog."""
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle(self.translator.get("dialog_search_option"))
-        msg_box.setText(self.translator.get("dialog_search_subfolders"))
-        yes_button = msg_box.addButton(
-            self.translator.get("dialog_yes_recursive"), QMessageBox.ButtonRole.YesRole
-        )
-        _no_button = msg_box.addButton(
-            self.translator.get("dialog_no_folder_only"), QMessageBox.ButtonRole.NoRole
-        )
-        cancel_button = msg_box.addButton(
-            self.translator.get("dialog_cancel"), QMessageBox.ButtonRole.RejectRole
-        )
-        msg_box.exec()
-        if msg_box.clickedButton() == cancel_button:
+        dlg = FolderSearchDialog(self, self.translator)
+        dlg.exec()
+        if dlg.result_choice == FolderSearchDialog.CANCELLED:
             return
-        include_subfolders = msg_box.clickedButton() == yes_button
+        include_subfolders = dlg.result_choice == FolderSearchDialog.RECURSIVE
         folder = QFileDialog.getExistingDirectory(
             self, self.translator.get("dialog_select_folder")
         )
@@ -2005,7 +2185,8 @@ class PEPatcherGUI(QMainWindow):
 
     def process_files(self, paths):
         """Start background validation of *paths* and add valid files to the list."""
-        new = [p for p in paths if not any(f['path'] == p for f in self.files)]
+        existing = {f['path'] for f in self.files}
+        new = [p for p in paths if p not in existing]
         if not new:
             self.log("log_all_files_added", "warning")
             return
@@ -2031,12 +2212,12 @@ class PEPatcherGUI(QMainWindow):
         self.files.append(info)
         self.file_items[info['path']] = item
         self.files_layout.addWidget(item)
-        self.update_stats()
 
     def files_added(self, added, errors):
         """Reset the progress bar and log the outcome of file processing."""
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.update_stats()
         if added:
             self.log("log_files_added", "success", [added])
         if errors:
@@ -2080,25 +2261,24 @@ class PEPatcherGUI(QMainWindow):
     def clear_all(self):
         """Remove all files from the list after confirmation."""
         if self.thread_manager.is_running():
-            QMessageBox.warning(
-                self,
+            _msg(
+                QMessageBox.Icon.Warning, self,
                 self.translator.get("dialog_op_in_progress"),
                 self.translator.get("dialog_cannot_clear"),
             )
             return
         if not self.files:
-            QMessageBox.information(
-                self,
+            _msg(
+                QMessageBox.Icon.Information, self,
                 self.translator.get("dialog_list_empty"),
                 self.translator.get("dialog_no_files_to_clear"),
             )
             return
-        question = QMessageBox.question(
+        if not _msg_question(
             self,
             self.translator.get("dialog_confirmation"),
             self.translator.get("dialog_clear_all_q"),
-        )
-        if question == QMessageBox.StandardButton.Yes:
+        ):
             for item in self.file_items.values():
                 item.deleteLater()
             self.files.clear()
@@ -2112,6 +2292,26 @@ class PEPatcherGUI(QMainWindow):
         """Clear the log widget and log the clear action itself."""
         self.log_text.clear()
         self.log("log_cleared", "info")
+
+    def _show_log_context_menu(self, pos):
+        """Show a dark-themed context menu for the log text widget."""
+        # Save the current selection — right-click steals focus and clears it
+        cursor = self.log_text.textCursor()
+        selection_start = cursor.selectionStart()
+        selection_end = cursor.selectionEnd()
+
+        standard_menu = self.log_text.createStandardContextMenu()
+        menu = DarkMenu(self.log_text)
+        for action in standard_menu.actions():
+            menu.addAction(action)
+        standard_menu.setParent(None)
+        menu.exec(self.log_text.mapToGlobal(pos))
+
+        # Restore the selection after the menu closes
+        cursor = self.log_text.textCursor()
+        cursor.setPosition(selection_start)
+        cursor.setPosition(selection_end, cursor.MoveMode.KeepAnchor)
+        self.log_text.setTextCursor(cursor)
 
     def update_stats(self):
         """Refresh the file-count badge in the header."""
@@ -2160,8 +2360,8 @@ class PEPatcherGUI(QMainWindow):
     def start_patching(self):
         """Validate the selection and launch the PatcherWorker thread."""
         if not self.files:
-            QMessageBox.warning(
-                self,
+            _msg(
+                QMessageBox.Icon.Warning, self,
                 self.translator.get("warning_title"),
                 self.translator.get("warning_no_files"),
             )
@@ -2171,8 +2371,8 @@ class PEPatcherGUI(QMainWindow):
         if self.all_apis.isChecked():
             apis = list(DLL_REPLACEMENTS.keys())
         if not apis:
-            QMessageBox.warning(
-                self,
+            _msg(
+                QMessageBox.Icon.Warning, self,
                 self.translator.get("warning_title"),
                 self.translator.get("warning_no_api"),
             )
@@ -2285,8 +2485,8 @@ class PEPatcherGUI(QMainWindow):
         self.log(summary_text, level, [])
 
         if not was_cancelled:
-            QMessageBox.information(
-                self,
+            _msg(
+                QMessageBox.Icon.Information, self,
                 self.translator.get("dialog_completed_title"),
                 summary_text,
             )
@@ -2299,8 +2499,8 @@ class PEPatcherGUI(QMainWindow):
                     cancel_message = self.translator.get(
                         "dialog_cancel_remaining", remaining_files
                     )
-                    QMessageBox.information(
-                        self,
+                    _msg(
+                        QMessageBox.Icon.Information, self,
                         self.translator.get("dialog_cancelled_title"),
                         cancel_message,
                     )
@@ -2319,6 +2519,17 @@ class PEPatcherGUI(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
+
+    # Explicitly set a font to avoid system font OpenType warnings (e.g. "Adwaita Sans" on Linux)
+    _preferred_fonts = ["Inter", "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans"]
+    _app_font = QFont()
+    for _fname in _preferred_fonts:
+        if QFont(_fname).exactMatch():
+            _app_font.setFamily(_fname)
+            break
+    _app_font.setPointSize(10)
+    app.setFont(_app_font)
+
     app.setStyleSheet(REFINED_STYLESHEET)
 
     lang_code, show_dialog = load_settings()
