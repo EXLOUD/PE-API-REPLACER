@@ -69,7 +69,7 @@ DONATION_ADDRESSES = {
     'github': 'https://github.com/EXLOUD',
 }
 
-APP_VERSION = "1.0.12"
+APP_VERSION = "1.0.13"
 LANG_FOLDER = "languages"
 
 
