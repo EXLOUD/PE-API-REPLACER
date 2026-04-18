@@ -1,8 +1,5 @@
 // ============================================================================
-// === EXMSW.DLL: MSWSOCK Final Implementation v2.2.0 ===
-// === Hybrid approach: ReactOS + Wine + Custom optimizations ===
-// === Author: EXLOUD (Enhanced by Claude) ===
-// === Purpose: Production-ready mswsock.dll emulation ===
+// === EXMSW.DLL: MSWSOCK Implementation ===
 // ============================================================================
 
 #define WIN32_LEAN_AND_MEAN
@@ -18,7 +15,7 @@
 #include <string.h>
 
 #pragma comment(lib, "kernel32.lib")
-#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "exws2.lib")
 
 // ============================================================================
 // Additional Definitions for SDK Compatibility
@@ -83,10 +80,10 @@ static LPFN_ACCEPTEX g_pfnAcceptEx = NULL;
 static LPFN_GETACCEPTEXSOCKADDRS g_pfnGetAcceptExSockaddrs = NULL;
 static LPFN_TRANSMITFILE g_pfnTransmitFile = NULL;
 
-// ws2_32.dll module handle for WSPStartup delegation
-static HMODULE g_hWs2_32 = NULL;
+// exws2.dll module handle for WSPStartup delegation
+static HMODULE g_hexws2 = NULL;
 
-// Function pointer types for ws2_32 functions
+// Function pointer types for exws2 functions
 typedef int (WSAAPI *PFN_WSASTARTUP)(WORD, LPWSADATA);
 typedef int (WSAAPI *PFN_WSACLEANUP)(void);
 
@@ -101,12 +98,6 @@ static HANDLE g_hConsole = NULL;
 static FILE* g_LogFile = NULL;
 static CRITICAL_SECTION g_LogCS;
 #endif
-
-// ============================================================================
-// Helper Macros
-// ============================================================================
-#undef UNREFERENCED_PARAMETER
-#define UNREFERENCED_PARAMETER(P) (void)(P)
 
 // ============================================================================
 // Error Handling
@@ -154,37 +145,37 @@ static void LogMessage(const char* format, ...) {
     }
     #endif
 #else
-    UNREFERENCED_PARAMETER(format);
+    (void)format;
 #endif
 }
 
 // ============================================================================
-// ws2_32.dll Module Management (for WSPStartup)
+// exws2.dll Module Management (for WSPStartup)
 // ============================================================================
-static BOOL load_ws2_32_module(void) {
-    if (g_hWs2_32 != NULL) {
+static BOOL load_exws2_module(void) {
+    if (g_hexws2 != NULL) {
         return TRUE;
     }
     
-    LogMessage("Loading ws2_32.dll for WSPStartup...");
-    g_hWs2_32 = LoadLibraryA("ws2_32.dll");
+    LogMessage("Loading exws2.dll for WSPStartup...");
+    g_hexws2 = LoadLibraryA("exws2.dll");
     
-    if (g_hWs2_32 == NULL) {
-        LogMessage("Failed to load ws2_32.dll (error: %lu)", GetLastError());
+    if (g_hexws2 == NULL) {
+        LogMessage("Failed to load exws2.dll (error: %lu)", GetLastError());
         return FALSE;
     }
     
-    pfn_WSAStartup = (PFN_WSASTARTUP)GetProcAddress(g_hWs2_32, "WSAStartup");
-    pfn_WSACleanup = (PFN_WSACLEANUP)GetProcAddress(g_hWs2_32, "WSACleanup");
+    pfn_WSAStartup = (PFN_WSASTARTUP)GetProcAddress(g_hexws2, "WSAStartup");
+    pfn_WSACleanup = (PFN_WSACLEANUP)GetProcAddress(g_hexws2, "WSACleanup");
     
-    LogMessage("ws2_32.dll loaded: WSAStartup=%p, WSACleanup=%p", 
+    LogMessage("exws2.dll loaded: WSAStartup=%p, WSACleanup=%p", 
                pfn_WSAStartup, pfn_WSACleanup);
     
     return TRUE;
 }
 
 // ============================================================================
-// Wrapper Functions for ws2_32 Import
+// Wrapper Functions for exws2 Import
 // ============================================================================
 int WSAAPI ex_wrapper_getsockopt(SOCKET s, int level, int optname, char* optval, int* optlen) {
     return getsockopt(s, level, optname, optval, optlen);
@@ -213,7 +204,7 @@ int WSAAPI ex_wrapper_setsockopt(SOCKET s, int level, int optname,
  *		AcceptEx
  *
  * ReactOS-style implementation with caching optimization.
- * Queries ws2_32 for the function pointer on first call using the
+ * Queries exws2 for the function pointer on first call using the
  * provided socket, then caches for future use.
  */
 BOOL PASCAL FAR ex_AcceptEx(
@@ -235,7 +226,7 @@ BOOL PASCAL FAR ex_AcceptEx(
         GUID GetAcceptExSockaddrsGUID = WSAID_GETACCEPTEXSOCKADDRS;
         DWORD cbBytesReturned;
         
-        LogMessage("Retrieving AcceptEx function pointer from ws2_32...");
+        LogMessage("Retrieving AcceptEx function pointer from exws2...");
         
         // Get AcceptEx
         if (WSAIoctl(sListenSocket,
@@ -352,7 +343,7 @@ BOOL PASCAL FAR ex_TransmitFile(
         GUID TransmitFileGUID = WSAID_TRANSMITFILE;
         DWORD cbBytesReturned;
         
-        LogMessage("Retrieving TransmitFile function pointer from ws2_32...");
+        LogMessage("Retrieving TransmitFile function pointer from exws2...");
         
         if (WSAIoctl(hSocket,
                      SIO_GET_EXTENSION_FUNCTION_POINTER,
@@ -385,21 +376,14 @@ BOOL PASCAL FAR ex_TransmitFile(
  *
  * Deprecated function - not implemented.
  */
-int PASCAL FAR ex_WSARecvEx(SOCKET s, char* buf, int len, int* flags)
+int WINAPI ex_WSARecvEx(SOCKET s, char* buf, int len, int* flags)
 {
-    LogMessage("WSARecvEx -> WSAEOPNOTSUPP (deprecated)");
-    
-    UNREFERENCED_PARAMETER(s);
-    UNREFERENCED_PARAMETER(buf);
-    UNREFERENCED_PARAMETER(len);
-    UNREFERENCED_PARAMETER(flags);
-    
-    SetMSWSockError(WSAEOPNOTSUPP);
+    LogMessage("WSARecvEx -> SOCKET_ERROR (stub)");
     return SOCKET_ERROR;
 }
 
 // ============================================================================
-// Protocol Enumeration Functions - Delegate to ws2_32
+// Protocol Enumeration Functions - Delegate to exws2
 // ============================================================================
 INT WSAAPI ex_EnumProtocolsA(LPINT lpiProtocols, LPVOID lpProtocolBuffer, LPDWORD lpdwBufferLength) {
     LogMessage("EnumProtocolsA -> Delegating to WSAEnumProtocolsA");
@@ -419,13 +403,7 @@ INT WSAAPI ex_GetAddressByNameA(DWORD dwNameSpace, LPGUID lpServiceType, LPSTR l
                                 LPSERVICE_ASYNC_INFO lpServiceAsyncInfo, LPVOID lpCsaddrBuffer, 
                                 LPDWORD lpdwBufferLength, LPSTR lpAliasBuffer, 
                                 LPDWORD lpdwAliasBufferLength) {
-    LogMessage("GetAddressByNameA -> WSAHOST_NOT_FOUND (deprecated, use getaddrinfo)");
-    UNREFERENCED_PARAMETER(dwNameSpace); UNREFERENCED_PARAMETER(lpServiceType);
-    UNREFERENCED_PARAMETER(lpServiceName); UNREFERENCED_PARAMETER(lpiProtocols);
-    UNREFERENCED_PARAMETER(dwResolution); UNREFERENCED_PARAMETER(lpServiceAsyncInfo);
-    UNREFERENCED_PARAMETER(lpCsaddrBuffer); UNREFERENCED_PARAMETER(lpdwBufferLength);
-    UNREFERENCED_PARAMETER(lpAliasBuffer); UNREFERENCED_PARAMETER(lpdwAliasBufferLength);
-    SetMSWSockError(WSAHOST_NOT_FOUND);
+    LogMessage("GetAddressByNameA -> SOCKET_ERROR (stub)");
     return SOCKET_ERROR;
 }
 
@@ -434,67 +412,41 @@ INT WSAAPI ex_GetAddressByNameW(DWORD dwNameSpace, LPGUID lpServiceType, LPWSTR 
                                 LPSERVICE_ASYNC_INFO lpServiceAsyncInfo, LPVOID lpCsaddrBuffer, 
                                 LPDWORD lpdwBufferLength, LPWSTR lpAliasBuffer, 
                                 LPDWORD lpdwAliasBufferLength) {
-    LogMessage("GetAddressByNameW -> WSAHOST_NOT_FOUND (deprecated)");
-    UNREFERENCED_PARAMETER(dwNameSpace); UNREFERENCED_PARAMETER(lpServiceType);
-    UNREFERENCED_PARAMETER(lpServiceName); UNREFERENCED_PARAMETER(lpiProtocols);
-    UNREFERENCED_PARAMETER(dwResolution); UNREFERENCED_PARAMETER(lpServiceAsyncInfo);
-    UNREFERENCED_PARAMETER(lpCsaddrBuffer); UNREFERENCED_PARAMETER(lpdwBufferLength);
-    UNREFERENCED_PARAMETER(lpAliasBuffer); UNREFERENCED_PARAMETER(lpdwAliasBufferLength);
-    SetMSWSockError(WSAHOST_NOT_FOUND);
+    LogMessage("GetAddressByNameW -> SOCKET_ERROR (stub)");
     return SOCKET_ERROR;
 }
 
 INT WSAAPI ex_GetNameByTypeA(LPGUID lpServiceType, LPSTR lpServiceName, DWORD dwNameLength) {
-    LogMessage("GetNameByTypeA -> WSATYPE_NOT_FOUND (deprecated)");
-    UNREFERENCED_PARAMETER(lpServiceType);
-    if (lpServiceName && dwNameLength > 0) lpServiceName[0] = '\0';
-    SetMSWSockError(WSATYPE_NOT_FOUND);
-    return SOCKET_ERROR;
+    LogMessage("GetNameByTypeA -> TRUE (stub)");
+    return TRUE;
 }
 
 INT WSAAPI ex_GetNameByTypeW(LPGUID lpServiceType, LPWSTR lpServiceName, DWORD dwNameLength) {
-    LogMessage("GetNameByTypeW -> WSATYPE_NOT_FOUND (deprecated)");
-    UNREFERENCED_PARAMETER(lpServiceType);
-    if (lpServiceName && dwNameLength > 0) lpServiceName[0] = L'\0';
-    SetMSWSockError(WSATYPE_NOT_FOUND);
-    return SOCKET_ERROR;
+    LogMessage("GetNameByTypeW -> TRUE (stub)");
+    return TRUE;
 }
 
 INT WSAAPI ex_GetTypeByNameA(LPSTR lpServiceName, LPGUID lpServiceType) {
-    LogMessage("GetTypeByNameA -> WSATYPE_NOT_FOUND (deprecated)");
-    UNREFERENCED_PARAMETER(lpServiceName); UNREFERENCED_PARAMETER(lpServiceType);
-    SetMSWSockError(WSATYPE_NOT_FOUND);
+    LogMessage("GetTypeByNameA -> SOCKET_ERROR (stub)");
     return SOCKET_ERROR;
 }
 
 INT WSAAPI ex_GetTypeByNameW(LPWSTR lpServiceName, LPGUID lpServiceType) {
-    LogMessage("GetTypeByNameW -> WSATYPE_NOT_FOUND (deprecated)");
-    UNREFERENCED_PARAMETER(lpServiceName); UNREFERENCED_PARAMETER(lpServiceType);
-    SetMSWSockError(WSATYPE_NOT_FOUND);
+    LogMessage("GetTypeByNameW -> SOCKET_ERROR (stub)");
     return SOCKET_ERROR;
 }
 
 INT WSAAPI ex_GetServiceA(DWORD dwNameSpace, LPGUID lpGuid, LPSTR lpServiceName, 
                           DWORD dwProperties, LPVOID lpBuffer, LPDWORD lpdwBufferSize, 
                           LPSERVICE_ASYNC_INFO lpServiceAsyncInfo) {
-    LogMessage("GetServiceA -> WSASERVICE_NOT_FOUND (deprecated)");
-    UNREFERENCED_PARAMETER(dwNameSpace); UNREFERENCED_PARAMETER(lpGuid);
-    UNREFERENCED_PARAMETER(lpServiceName); UNREFERENCED_PARAMETER(dwProperties);
-    UNREFERENCED_PARAMETER(lpBuffer); UNREFERENCED_PARAMETER(lpdwBufferSize);
-    UNREFERENCED_PARAMETER(lpServiceAsyncInfo);
-    SetMSWSockError(WSASERVICE_NOT_FOUND);
+    LogMessage("GetServiceA -> SOCKET_ERROR (stub)");
     return SOCKET_ERROR;
 }
 
 INT WSAAPI ex_GetServiceW(DWORD dwNameSpace, LPGUID lpGuid, LPWSTR lpServiceName, 
                           DWORD dwProperties, LPVOID lpBuffer, LPDWORD lpdwBufferSize, 
                           LPSERVICE_ASYNC_INFO lpServiceAsyncInfo) {
-    LogMessage("GetServiceW -> WSASERVICE_NOT_FOUND (deprecated)");
-    UNREFERENCED_PARAMETER(dwNameSpace); UNREFERENCED_PARAMETER(lpGuid);
-    UNREFERENCED_PARAMETER(lpServiceName); UNREFERENCED_PARAMETER(dwProperties);
-    UNREFERENCED_PARAMETER(lpBuffer); UNREFERENCED_PARAMETER(lpdwBufferSize);
-    UNREFERENCED_PARAMETER(lpServiceAsyncInfo);
-    SetMSWSockError(WSASERVICE_NOT_FOUND);
+    LogMessage("GetServiceW -> SOCKET_ERROR (stub)");
     return SOCKET_ERROR;
 }
 
@@ -502,22 +454,16 @@ INT WSAAPI ex_SetServiceA(DWORD dwNameSpace, DWORD dwOperation, DWORD dwFlags,
                           LPSERVICE_INFOA lpServiceInfo, 
                           LPSERVICE_ASYNC_INFO lpServiceAsyncInfo, 
                           LPDWORD lpdwStatusFlags) {
-    LogMessage("SetServiceA -> NO_ERROR (deprecated stub)");
-    UNREFERENCED_PARAMETER(dwNameSpace); UNREFERENCED_PARAMETER(dwOperation);
-    UNREFERENCED_PARAMETER(dwFlags); UNREFERENCED_PARAMETER(lpServiceInfo);
-    UNREFERENCED_PARAMETER(lpServiceAsyncInfo); UNREFERENCED_PARAMETER(lpdwStatusFlags);
-    return NO_ERROR;
+    LogMessage("SetServiceA -> SOCKET_ERROR (deprecated stub)");
+    return SOCKET_ERROR;
 }
 
 INT WSAAPI ex_SetServiceW(DWORD dwNameSpace, DWORD dwOperation, DWORD dwFlags, 
                           LPSERVICE_INFOW lpServiceInfo, 
                           LPSERVICE_ASYNC_INFO lpServiceAsyncInfo, 
                           LPDWORD lpdwStatusFlags) {
-    LogMessage("SetServiceW -> NO_ERROR (deprecated stub)");
-    UNREFERENCED_PARAMETER(dwNameSpace); UNREFERENCED_PARAMETER(dwOperation);
-    UNREFERENCED_PARAMETER(dwFlags); UNREFERENCED_PARAMETER(lpServiceInfo);
-    UNREFERENCED_PARAMETER(lpServiceAsyncInfo); UNREFERENCED_PARAMETER(lpdwStatusFlags);
-    return NO_ERROR;
+    LogMessage("SetServiceW -> SOCKET_ERROR (deprecated stub)");
+    return SOCKET_ERROR;
 }
 
 // ============================================================================
@@ -527,8 +473,6 @@ INT WSAAPI ex_SetServiceW(DWORD dwNameSpace, DWORD dwOperation, DWORD dwFlags,
 INT WSAAPI ex_Tcpip4_WSHAddressToString(LPSOCKADDR Address, INT AddressLength, 
                                         LPWSAPROTOCOL_INFOW ProtocolInfo, 
                                         LPWSTR AddressString, LPDWORD AddressStringLength) {
-    UNREFERENCED_PARAMETER(Address); UNREFERENCED_PARAMETER(AddressLength);
-    UNREFERENCED_PARAMETER(ProtocolInfo);
     
     if (AddressString && AddressStringLength && *AddressStringLength >= 16) {
         wcscpy_s(AddressString, *AddressStringLength, L"127.0.0.1");
@@ -540,15 +484,12 @@ INT WSAAPI ex_Tcpip4_WSHAddressToString(LPSOCKADDR Address, INT AddressLength,
 
 INT WSAAPI ex_Tcpip4_WSHEnumProtocols(LPINT lpiProtocols, LPWSTR lpTransportKeyName, 
                                      LPVOID lpProtocolBuffer, LPDWORD lpdwBufferLength) {
-    UNREFERENCED_PARAMETER(lpiProtocols); UNREFERENCED_PARAMETER(lpTransportKeyName);
-    UNREFERENCED_PARAMETER(lpProtocolBuffer);
     if (lpdwBufferLength) *lpdwBufferLength = 0;
     return 0;
 }
 
 INT WSAAPI ex_Tcpip4_WSHGetBroadcastSockaddr(PVOID HelperDllSocketContext, 
                                              PSOCKADDR Sockaddr, PINT SockaddrLength) {
-    UNREFERENCED_PARAMETER(HelperDllSocketContext);
     
     if (Sockaddr && SockaddrLength && *SockaddrLength >= sizeof(struct sockaddr_in)) {
         struct sockaddr_in* addr = (struct sockaddr_in*)Sockaddr;
@@ -562,7 +503,6 @@ INT WSAAPI ex_Tcpip4_WSHGetBroadcastSockaddr(PVOID HelperDllSocketContext,
 }
 
 INT WSAAPI ex_Tcpip4_WSHGetProviderGuid(LPWSTR ProviderName, LPGUID ProviderGuid) {
-    UNREFERENCED_PARAMETER(ProviderName);
     if (ProviderGuid) {
         memset(ProviderGuid, 0, sizeof(GUID));
         return 0;
@@ -572,7 +512,6 @@ INT WSAAPI ex_Tcpip4_WSHGetProviderGuid(LPWSTR ProviderName, LPGUID ProviderGuid
 
 INT WSAAPI ex_Tcpip4_WSHGetSockaddrType(PSOCKADDR Sockaddr, DWORD SockaddrLength, 
                                        PSOCKADDR_INFO SockaddrInfo) {
-    UNREFERENCED_PARAMETER(Sockaddr); UNREFERENCED_PARAMETER(SockaddrLength);
     if (SockaddrInfo) {
         SockaddrInfo->AddressInfo = SockaddrInfoNormal;
         SockaddrInfo->EndpointInfo = SockaddrEndpointRelevant;
@@ -586,9 +525,6 @@ INT WSAAPI ex_Tcpip4_WSHGetSocketInformation(PVOID HelperDllSocketContext, SOCKE
                                              HANDLE TdiConnectionObjectHandle,
                                              INT Level, INT OptionName, 
                                              PCHAR OptionValue, PINT OptionLength) {
-    UNREFERENCED_PARAMETER(HelperDllSocketContext); UNREFERENCED_PARAMETER(SocketHandle);
-    UNREFERENCED_PARAMETER(TdiAddressObjectHandle); UNREFERENCED_PARAMETER(TdiConnectionObjectHandle);
-    UNREFERENCED_PARAMETER(Level); UNREFERENCED_PARAMETER(OptionName);
     
     if (OptionValue && OptionLength && *OptionLength >= sizeof(int)) {
         *(int*)OptionValue = 0;
@@ -601,14 +537,12 @@ INT WSAAPI ex_Tcpip4_WSHGetSocketInformation(PVOID HelperDllSocketContext, SOCKE
 INT WSAAPI ex_Tcpip4_WSHGetWSAProtocolInfo(LPWSTR ProviderName, 
                                           LPWSAPROTOCOL_INFOW* ProtocolInfo, 
                                           LPDWORD ProtocolInfoEntries) {
-    UNREFERENCED_PARAMETER(ProviderName); UNREFERENCED_PARAMETER(ProtocolInfo);
     if (ProtocolInfoEntries) *ProtocolInfoEntries = 0;
     return 0;
 }
 
 INT WSAAPI ex_Tcpip4_WSHGetWildcardSockaddr(PVOID HelperDllSocketContext, 
                                            PSOCKADDR Sockaddr, PINT SockaddrLength) {
-    UNREFERENCED_PARAMETER(HelperDllSocketContext);
     
     if (Sockaddr && SockaddrLength && *SockaddrLength >= sizeof(struct sockaddr_in)) {
         struct sockaddr_in* addr = (struct sockaddr_in*)Sockaddr;
@@ -622,7 +556,6 @@ INT WSAAPI ex_Tcpip4_WSHGetWildcardSockaddr(PVOID HelperDllSocketContext,
 }
 
 INT WSAAPI ex_Tcpip4_WSHGetWinsockMapping(PWINSOCK_MAPPING Mapping, DWORD MappingLength) {
-    UNREFERENCED_PARAMETER(Mapping); UNREFERENCED_PARAMETER(MappingLength);
     return 0;
 }
 
@@ -633,12 +566,6 @@ INT WSAAPI ex_Tcpip4_WSHIoctl(PVOID HelperDllSocketContext, SOCKET SocketHandle,
                               LPDWORD NumberOfBytesReturned, LPWSAOVERLAPPED Overlapped,
                               LPWSAOVERLAPPED_COMPLETION_ROUTINE CompletionRoutine, 
                               LPBOOL NeedsCompletion) {
-    UNREFERENCED_PARAMETER(HelperDllSocketContext); UNREFERENCED_PARAMETER(SocketHandle);
-    UNREFERENCED_PARAMETER(TdiAddressObjectHandle); UNREFERENCED_PARAMETER(TdiConnectionObjectHandle);
-    UNREFERENCED_PARAMETER(IoControlCode); UNREFERENCED_PARAMETER(InputBuffer);
-    UNREFERENCED_PARAMETER(InputBufferLength); UNREFERENCED_PARAMETER(OutputBuffer);
-    UNREFERENCED_PARAMETER(OutputBufferLength); UNREFERENCED_PARAMETER(NumberOfBytesReturned);
-    UNREFERENCED_PARAMETER(Overlapped); UNREFERENCED_PARAMETER(CompletionRoutine);
     
     if (NeedsCompletion) *NeedsCompletion = FALSE;
     return 0;
@@ -650,41 +577,24 @@ INT WSAAPI ex_Tcpip4_WSHJoinLeaf(PVOID HelperDllSocketContext, SOCKET SocketHand
                                  PSOCKADDR Sockaddr, DWORD SockaddrLength,
                                  LPWSABUF CallerData, LPWSABUF CalleeData,
                                  LPQOS SocketQOS, LPQOS GroupQOS, DWORD Flags) {
-    UNREFERENCED_PARAMETER(HelperDllSocketContext); UNREFERENCED_PARAMETER(SocketHandle);
-    UNREFERENCED_PARAMETER(TdiAddressObjectHandle); UNREFERENCED_PARAMETER(TdiConnectionObjectHandle);
-    UNREFERENCED_PARAMETER(LeafHelperDllSocketContext); UNREFERENCED_PARAMETER(LeafSocketHandle);
-    UNREFERENCED_PARAMETER(Sockaddr); UNREFERENCED_PARAMETER(SockaddrLength);
-    UNREFERENCED_PARAMETER(CallerData); UNREFERENCED_PARAMETER(CalleeData);
-    UNREFERENCED_PARAMETER(SocketQOS); UNREFERENCED_PARAMETER(GroupQOS);
-    UNREFERENCED_PARAMETER(Flags);
     return 0;
 }
 
 INT WSAAPI ex_Tcpip4_WSHNotify(PVOID HelperDllSocketContext, SOCKET SocketHandle,
                                HANDLE TdiAddressObjectHandle, HANDLE TdiConnectionObjectHandle,
                                DWORD NotifyEvent) {
-    UNREFERENCED_PARAMETER(HelperDllSocketContext); UNREFERENCED_PARAMETER(SocketHandle);
-    UNREFERENCED_PARAMETER(TdiAddressObjectHandle); UNREFERENCED_PARAMETER(TdiConnectionObjectHandle);
-    UNREFERENCED_PARAMETER(NotifyEvent);
     return 0;
 }
 
 INT WSAAPI ex_Tcpip4_WSHOpenSocket(PINT AddressFamily, PINT SocketType, PINT Protocol,
                                    PUNICODE_STRING TransportDeviceName, 
                                    PVOID* HelperDllSocketContext, PDWORD NotificationEvents) {
-    UNREFERENCED_PARAMETER(AddressFamily); UNREFERENCED_PARAMETER(SocketType);
-    UNREFERENCED_PARAMETER(Protocol); UNREFERENCED_PARAMETER(TransportDeviceName);
-    UNREFERENCED_PARAMETER(HelperDllSocketContext); UNREFERENCED_PARAMETER(NotificationEvents);
     return 0;
 }
 
 INT WSAAPI ex_Tcpip4_WSHOpenSocket2(PINT AddressFamily, PINT SocketType, PINT Protocol,
                                     GROUP Group, DWORD Flags, PUNICODE_STRING TransportDeviceName,
                                     PVOID* HelperDllSocketContext, PDWORD NotificationEvents) {
-    UNREFERENCED_PARAMETER(AddressFamily); UNREFERENCED_PARAMETER(SocketType);
-    UNREFERENCED_PARAMETER(Protocol); UNREFERENCED_PARAMETER(Group);
-    UNREFERENCED_PARAMETER(Flags); UNREFERENCED_PARAMETER(TransportDeviceName);
-    UNREFERENCED_PARAMETER(HelperDllSocketContext); UNREFERENCED_PARAMETER(NotificationEvents);
     return 0;
 }
 
@@ -693,18 +603,12 @@ INT WSAAPI ex_Tcpip4_WSHSetSocketInformation(PVOID HelperDllSocketContext, SOCKE
                                              HANDLE TdiConnectionObjectHandle,
                                              INT Level, INT OptionName, 
                                              PCHAR OptionValue, INT OptionLength) {
-    UNREFERENCED_PARAMETER(HelperDllSocketContext); UNREFERENCED_PARAMETER(SocketHandle);
-    UNREFERENCED_PARAMETER(TdiAddressObjectHandle); UNREFERENCED_PARAMETER(TdiConnectionObjectHandle);
-    UNREFERENCED_PARAMETER(Level); UNREFERENCED_PARAMETER(OptionName);
-    UNREFERENCED_PARAMETER(OptionValue); UNREFERENCED_PARAMETER(OptionLength);
     return 0;
 }
 
 INT WSAAPI ex_Tcpip4_WSHStringToAddress(LPWSTR AddressString, DWORD AddressFamily,
                                        LPWSAPROTOCOL_INFOW ProtocolInfo,
                                        LPSOCKADDR Address, LPDWORD AddressLength) {
-    UNREFERENCED_PARAMETER(AddressString); UNREFERENCED_PARAMETER(AddressFamily);
-    UNREFERENCED_PARAMETER(ProtocolInfo);
     
     if (Address && AddressLength && *AddressLength >= sizeof(struct sockaddr_in)) {
         struct sockaddr_in* addr = (struct sockaddr_in*)Address;
@@ -722,7 +626,6 @@ INT WSAAPI ex_Tcpip4_WSHStringToAddress(LPWSTR AddressString, DWORD AddressFamil
 // ============================================================================
 INT WSAAPI ex_Tcpip6_WSHAddressToString(LPSOCKADDR A, INT AL, LPWSAPROTOCOL_INFOW PI, 
                                        LPWSTR AS, LPDWORD ASL) {
-    UNREFERENCED_PARAMETER(A); UNREFERENCED_PARAMETER(AL); UNREFERENCED_PARAMETER(PI);
     if (AS && ASL && *ASL >= 4) {
         wcscpy_s(AS, *ASL, L"::1");
         *ASL = 4;
@@ -805,12 +708,9 @@ INT WSAAPI ex_WSPStartup(WORD wVersionRequested, LPWSPDATA lpWSPData,
                          WSPUPCALLTABLE UpcallTable, LPWSPPROC_TABLE lpProcTable) {
     LogMessage("WSPStartup(version=%04X)", wVersionRequested);
     
-    UNREFERENCED_PARAMETER(lpProtocolInfo);
-    UNREFERENCED_PARAMETER(UpcallTable);
-    UNREFERENCED_PARAMETER(lpProcTable);
     
-    if (!load_ws2_32_module()) {
-        LogMessage("WSPStartup: Failed to load ws2_32.dll");
+    if (!load_exws2_module()) {
+        LogMessage("WSPStartup: Failed to load exws2.dll");
         return WSASYSNOTREADY;
     }
     
@@ -872,16 +772,13 @@ INT WSAAPI ex_GetSocketErrorMessageW(INT ErrorCode, LPWSTR Buffer, INT BufferSiz
 
 int WSAAPI ex_NPLoadNameSpaces(LPDWORD lpdwVersion, LPNS_ROUTINE lpnsrBuffer, 
                                LPDWORD lpdwBufferLength) {
-    LogMessage("NPLoadNameSpaces");
-    UNREFERENCED_PARAMETER(lpnsrBuffer);
+    LogMessage("NPLoadNameSpaces -> TRUE (stub)");
     if (lpdwVersion) *lpdwVersion = 1;
-    if (lpdwBufferLength) *lpdwBufferLength = 0;
-    return 0;
+    return TRUE;
 }
 
 INT WSAAPI ex_NSPStartup(LPGUID lpProviderId, LPNSP_ROUTINE lpnspRoutines) {
     LogMessage("NSPStartup");
-    UNREFERENCED_PARAMETER(lpProviderId); UNREFERENCED_PARAMETER(lpnspRoutines);
     return NO_ERROR;
 }
 
@@ -889,44 +786,34 @@ void WSAAPI ex_ProcessSocketNotifications(void) {
     LogMessage("ProcessSocketNotifications");
 }
 
-DWORD WSAAPI ex_StartWsdpService(void) {
-    LogMessage("StartWsdpService");
-    return ERROR_SERVICE_DISABLED;
+VOID WSAAPI ex_StartWsdpService(void) {
+    LogMessage("StartWsdpService -> (stub)");
 }
 
-BOOL WSAAPI ex_StopWsdpService(void) {
-    LogMessage("StopWsdpService");
-    return TRUE;
+VOID WSAAPI ex_StopWsdpService(void) {
+    LogMessage("StopWsdpService -> (stub)");
 }
 
 INT WSAAPI ex_MigrateWinsockConfiguration(DWORD dwFromVersion, DWORD dwToVersion, 
                                          DWORD Reserved) {
-    LogMessage("MigrateWinsockConfiguration");
-    UNREFERENCED_PARAMETER(dwFromVersion); UNREFERENCED_PARAMETER(dwToVersion);
-    UNREFERENCED_PARAMETER(Reserved);
-    return 0;
+    LogMessage("MigrateWinsockConfiguration -> SOCKET_ERROR (stub)");
+    return SOCKET_ERROR;
 }
 
 INT WSAAPI ex_MigrateWinsockConfigurationEx(DWORD dwFromVersion, DWORD dwToVersion, 
                                             LPWSTR lpszFromPath, LPWSTR lpszToPath, 
                                             DWORD Reserved) {
-    LogMessage("MigrateWinsockConfigurationEx");
-    UNREFERENCED_PARAMETER(dwFromVersion); UNREFERENCED_PARAMETER(dwToVersion);
-    UNREFERENCED_PARAMETER(lpszFromPath); UNREFERENCED_PARAMETER(lpszToPath);
-    UNREFERENCED_PARAMETER(Reserved);
-    return 0;
+    LogMessage("MigrateWinsockConfigurationEx -> SOCKET_ERROR (stub)");
+    return SOCKET_ERROR;
 }
 
 // ============================================================================
 // Unix Compatibility Functions (Blocked for security - ReactOS style)
 // ============================================================================
-int WSAAPI ex_dn_expand(const unsigned char* msg, const unsigned char* eom, 
-                        const unsigned char* comp, char* exp, int l) {
-    LogMessage("dn_expand -> -1 (not implemented)");
-    UNREFERENCED_PARAMETER(msg); UNREFERENCED_PARAMETER(eom); 
-    UNREFERENCED_PARAMETER(comp);
-    if (exp && l > 0) exp[0] = '\0';
-    return -1;
+int WSAAPI ex_dn_expand(unsigned char* msg, unsigned char* eom, 
+                        unsigned char* comp, unsigned char* exp, int l) {
+    LogMessage("dn_expand -> SOCKET_ERROR (not implemented)");
+    return SOCKET_ERROR;
 }
 
 struct netent* WSAAPI ex_getnetbyname(const char* name) {
@@ -936,49 +823,39 @@ struct netent* WSAAPI ex_getnetbyname(const char* name) {
 
 unsigned long WSAAPI ex_inet_network(const char* cp) {
     LogMessage("inet_network('%s') -> INADDR_NONE", cp ? cp : "NULL");
-    UNREFERENCED_PARAMETER(cp);
     return INADDR_NONE;
 }
 
-int WSAAPI ex_rcmd(char** a, u_short r, const char* lc, const char* rm, 
-                   const char* c, int* f) {
-    LogMessage("rcmd() -> BLOCKED for security");
-    UNREFERENCED_PARAMETER(a); UNREFERENCED_PARAMETER(r); UNREFERENCED_PARAMETER(lc);
-    UNREFERENCED_PARAMETER(rm); UNREFERENCED_PARAMETER(c); UNREFERENCED_PARAMETER(f);
-    return -1;
+SOCKET WINAPI ex_rcmd(char** a, USHORT r, char* lc, char* rm, 
+                   char* c, int* f) {
+    LogMessage("rcmd() -> INVALID_SOCKET (stub)");
+    return INVALID_SOCKET;
 }
 
-int WSAAPI ex_rexec(char** a, int r, const char* u, const char* p, 
-                    const char* c, int* f) {
-    LogMessage("rexec() -> BLOCKED for security");
-    UNREFERENCED_PARAMETER(a); UNREFERENCED_PARAMETER(r); UNREFERENCED_PARAMETER(u);
-    UNREFERENCED_PARAMETER(p); UNREFERENCED_PARAMETER(c); UNREFERENCED_PARAMETER(f);
-    return -1;
+SOCKET WINAPI ex_rexec(char** a, int r, char* u, char* p, 
+                    char* c, int* f) {
+    LogMessage("rexec() -> INVALID_SOCKET (stub)");
+    return INVALID_SOCKET;
 }
 
-int WSAAPI ex_rresvport(int* port) {
-    LogMessage("rresvport() -> -1 (not implemented)");
-    UNREFERENCED_PARAMETER(port);
-    return -1;
+SOCKET WINAPI ex_rresvport(int* port) {
+    LogMessage("rresvport() -> INVALID_SOCKET (stub)");
+    return INVALID_SOCKET;
 }
 
 void WSAAPI ex_s_perror(const char* msg) {
     LogMessage("s_perror('%s')", msg ? msg : "NULL");
-    UNREFERENCED_PARAMETER(msg);
 }
 
-int WSAAPI ex_sethostname(const char* name, int namelen) {
-    LogMessage("sethostname()");
-    UNREFERENCED_PARAMETER(name); UNREFERENCED_PARAMETER(namelen);
-    return 0;
+int WINAPI ex_sethostname(char* name, int namelen) {
+    LogMessage("sethostname() -> SOCKET_ERROR (stub)");
+    return SOCKET_ERROR;
 }
 
 // ============================================================================
 // DLL Entry Point
 // ============================================================================
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
-    UNREFERENCED_PARAMETER(hModule);
-    UNREFERENCED_PARAMETER(lpReserved);
     
     switch (ul_reason_for_call) {
         case DLL_PROCESS_ATTACH:
@@ -1000,21 +877,21 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 fopen_s(&g_LogFile, path, "a");
                 #endif
                 
-                LogMessage("=== EXMSW v2.2.0 Initialized (ReactOS Hybrid) ===");
+                LogMessage("=== EXMSW ===");
             }
             break;
             
         case DLL_PROCESS_DETACH:
             if (InterlockedDecrement(&g_InitCount) == 0) {
-                LogMessage("=== EXMSW v2.2.0 Unloading ===");
+                LogMessage("=== EXMSW Unloading ===");
                 
                 if (g_tlsError != TLS_OUT_OF_INDEXES) {
                     TlsFree(g_tlsError);
                 }
                 
-                if (g_hWs2_32 != NULL) {
-                    FreeLibrary(g_hWs2_32);
-                    g_hWs2_32 = NULL;
+                if (g_hexws2 != NULL) {
+                    FreeLibrary(g_hexws2);
+                    g_hexws2 = NULL;
                 }
                 
                 #if ENABLE_FILE_LOGGING
